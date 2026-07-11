@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>街景感知对比评估</title>
+    <style>
+        body { font-family: -apple-system, sans-serif; background: #f5f5f7; margin: 0; padding: 20px; color: #1d1d1f; }
+        .header { display: flex; justify-content: space-between; align-items: center; max-width: 1200px; margin: 0 auto 15px auto; background: white; padding: 10px 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
+        .progress-bar-container { width: 60%; background: #e5e5e5; height: 12px; border-radius: 6px; overflow: hidden; }
+        .progress-bar { height: 100%; background: #34c759; width: 0%; transition: width 0.3s; }
+        .main-container { max-width: 1200px; margin: 0 auto; display: flex; flex-direction: column; gap: 20px; }
+        .image-container { display: flex; gap: 20px; justify-content: space-between; }
+        .image-box { flex: 1; background: white; padding: 15px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); text-align: center; }
+        .image-box img { max-width: 100%; height: auto; border-radius: 8px; object-fit: cover; max-height: 450px; }
+        .title-tag { display: inline-block; padding: 4px 12px; background: #0071e3; color: white; border-radius: 12px; font-size: 14px; margin-bottom: 10px; font-weight: bold; }
+        .survey-table { width: 100%; background: white; border-collapse: collapse; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 12px rgba(0,0,0,0.05); }
+        .survey-table th { background: #f5f5f7; padding: 15px; font-size: 15px; border-bottom: 2px solid #e5e5e5; }
+        .survey-table td { padding: 15px; text-align: center; border-bottom: 1px solid #eee; font-size: 15px; }
+        .dim-title { font-weight: bold; color: #333; text-align: left; padding-left: 20px; }
+        .radio-label { display: block; width: 100%; height: 100%; cursor: pointer; padding: 10px 0; border-radius: 6px; transition: background 0.2s; }
+        .radio-label:hover { background: #f5f5f7; }
+        .radio-label input { transform: scale(1.2); cursor: pointer; }
+        .submit-btn-container { text-align: center; margin-top: 10px; margin-bottom: 40px; }
+        .submit-btn { background: #0071e3; color: white; border: none; padding: 14px 60px; font-size: 16px; font-weight: bold; border-radius: 8px; cursor: pointer; box-shadow: 0 4px 12px rgba(0,113,227,0.3); transition: all 0.2s; }
+        .submit-btn:hover { background: #0077ed; transform: translateY(-1px); }
+        /* 针对未勾选行的高亮提示样式 */
+        .error-row { background-color: #fff2f2 !important; transition: background-color 0.3s; }
+    </style>
+</head>
+<body>
+
+    <div class="header">
+        <div style="font-weight: bold; font-size: 18px;">🏞️ 街景感知两两比较评估</div>
+        <div class="progress-bar-container">
+            <div id="progressBar" class="progress-bar"></div>
+        </div>
+        <div id="progressText" style="font-weight: bold; color: #666;">正在加载...</div>
+    </div>
+
+    <div class="main-container">
+        <div class="image-container">
+            <div class="image-box">
+                <span class="title-tag">A 组街景（左侧）</span>
+                <div>
+                    <img id="leftImage" src="" alt="左侧街景载入中...">
+                </div>
+            </div>
+            <div class="image-box">
+                <span class="title-tag">B 组街景（右侧）</span>
+                <div>
+                    <img id="rightImage" src="" alt="右侧街景载入中...">
+                </div>
+            </div>
+        </div>
+
+        <form id="surveyForm" onsubmit="event.preventDefault(); submitTurn();">
+            <table class="survey-table">
+                <thead>
+                    <tr>
+                        <th style="width: 34%;">感知评估维度 (Dimension)</th>
+                        <th style="width: 22%;">👈 左侧 A 更好</th>
+                        <th style="width: 22%;">🤝 两者差不多 (平局)</th>
+                        <th style="width: 22%;">👉 右侧 B 更好</th>
+                    </tr>
+                </thead>
+                <tbody id="tableBody">
+                    </tbody>
+            </table>
+
+            <div class="submit-btn-container">
+                <button type="submit" class="submit-btn">提交本组比对，进入下一题 ➔</button>
+            </div>
+        </form>
+    </div>
+
+    <script>
+        var currentQuestion = null;
+        var dimensions = ['beauty', 'safety', 'vitality', 'depression', 'wealthy', 'boring', 'harmony', 'active'];
+        var dimsData = [
+            { id: 'beauty', name: '1. 美观度 (哪个更美丽、赏心悦目？)' },
+            { id: 'safety', name: '2. 安全感 (哪个让你感觉更安全、放心？)' },
+            { id: 'vitality', name: '3. 活力度 (哪个看起来更有城市生机与活力？)' },
+            { id: 'depression', name: '4. 压抑感 (哪个环境让你觉得更压抑、沉闷？)' },
+            { id: 'wealthy', name: '5. 富裕度 (哪个街区视觉上看起来更富裕、高级？)' },
+            { id: 'boring', name: '6. 枯燥度 (哪个街道环境让你觉得更无趣、枯燥？)' },
+            { id: 'harmony', name: '7. 和谐度 (哪个街景的建筑与绿化整体更和谐？)' },
+            { id: 'active', name: '8. 活动意愿 (哪个街道更想让你下车去走走、逛逛？)' }
+        ];
+
+        // 动态渲染表格，彻底清除默认选项
+        function renderTableSkeleton() {
+            var html = '';
+            dimsData.forEach(function(d) {
+                html += '<tr id="row_' + d.id + '">';
+                html += '<td class="dim-title">' + d.name + '</td>';
+                html += '<td><label class="radio-label"><input type="radio" name="' + d.id + '" value="left"></label></td>';
+                html += '<td><label class="radio-label"><input type="radio" name="' + d.id + '" value="tie"></label></td>';
+                html += '<td><label class="radio-label"><input type="radio" name="' + d.id + '" value="right"></label></td>';
+                html += '</tr>';
+            });
+            document.getElementById('tableBody').innerHTML = html;
+        }
+
+        function loadQuestion() {
+            fetch('/get_current_question')
+            .then(function(res) { return res.json(); })
+            .then(function(data) {
+                if (data.status === 'completed') {
+                    window.location.href = '/thank_you';
+                    return;
+                }
+                if (data.status === 'success') {
+                    currentQuestion = data.question;
+                    
+                    document.getElementById('leftImage').src = currentQuestion.left_img_url;
+                    document.getElementById('rightImage').src = currentQuestion.right_img_url;
+                    
+                    var displayIdx = data.current_index + 1;
+                    var percent = (displayIdx / data.total_questions) * 100;
+                    document.getElementById('progressBar').style.width = percent + '%';
+                    document.getElementById('progressText').innerText = displayIdx + ' / ' + data.total_questions;
+                    
+                    // 重置表单，恢复全空白状态
+                    document.getElementById('surveyForm').reset();
+                    // 清除可能残余的红色警告高亮
+                    dimensions.forEach(function(dim) {
+                        document.getElementById('row_' + dim).classList.remove('error-row');
+                    });
+                    
+                    window.questionStartTime = new Date().toISOString();
+                } else {
+                    alert("会话中断，请返回主页重新登录。");
+                }
+            })
+            .catch(function(err) {
+                console.error(err);
+                alert("加载题目失败。");
+            });
+        }
+
+        function submitTurn() {
+            if (!currentQuestion) return;
+
+            var currentChoices = {};
+            var missingDimensions = [];
+
+            // 严格遍历检查每一个维度是否有被勾选
+            dimensions.forEach(function(dim) {
+                var selected = document.querySelector('input[name="' + dim + '"]:checked');
+                if (!selected) {
+                    missingDimensions.push(dim);
+                    document.getElementById('row_' + dim).classList.add('error-row'); // 未选中的行高亮标红
+                } else {
+                    document.getElementById('row_' + dim).classList.remove('error-row');
+                    currentChoices[dim] = selected.value;
+                }
+            });
+
+            // 拦截机制：如果有任何一个维度没选，不允许提交，并给予弹窗警告
+            if (missingDimensions.length > 0) {
+                alert("⚠️ 请完成所有维度的感知评估后再提交！（未填写的项目已标红提示）");
+                return;
+            }
+
+            var payload = {
+                pair_id: currentQuestion.pair_id,
+                order_in_participant: currentQuestion.order,
+                left_qid: currentQuestion.left_qid,
+                right_qid: currentQuestion.right_qid,
+                left_image_id: currentQuestion.left_image_id,
+                right_image_id: currentQuestion.right_image_id,
+                choices: currentChoices,
+                question_start_time: window.questionStartTime,
+                question_submit_time: new Date().toISOString()
+            };
+
+            fetch('/submit_response', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            })
+            .then(function(res) { return res.json(); })
+            .then(function(data) {
+                if (data.status === 'success') {
+                    loadQuestion();
+                } else {
+                    alert("数据入库保存失败，原因: " + data.message);
+                }
+            })
+            .catch(function(err) {
+                console.error(err);
+                alert("请求发生错误，请检查 Flask 控制台。");
+            });
+        }
+
+        window.onload = function() {
+            renderTableSkeleton(); // 第一步：生成完全空白的表格骨架
+            loadQuestion();        // 第二步：载入题目
+        };
+    </script>
+</body>
+</html>
