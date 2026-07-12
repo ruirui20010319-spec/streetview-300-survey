@@ -3,7 +3,7 @@ import os
 
 # 1. 填入你的阿里云 OSS 基础访问域名（记得以 https:// 开头，末尾不要带斜杠 /）
 # 请把下面这个示例网址，改成你真实的 OSS 访问域名！
-OSS_BASE_URL = "https://your-bucket-name.oss-cn-hangzhou.aliyuncs.com"
+OSS_BASE_URL = "https://streetview-images.oss-cn-hangzhou.aliyuncs.com"
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 ASSIGNMENT_PATH = os.path.join(BASE_DIR, 'tables', 'questionnaire_pair_assignment_150x30.xlsx')
