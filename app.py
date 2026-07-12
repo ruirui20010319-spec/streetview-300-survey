@@ -1,5 +1,7 @@
 import os
 import uuid
+import csv  # 🌟 必须引入这个模块用来生成 CSV 格式
+import io
 from datetime import datetime
 from flask import Flask, render_template, request, redirect, url_for, session, jsonify
 import data_loader
@@ -256,6 +258,52 @@ def view_survey_data():
     html += "</table>"
 
     return html
+
+# ================= 🌟 方案二追加：一键下载 CSV 路由 🌟 =================
+@app.route('/admin/export/profiles')
+def export_profiles():
+    if request.args.get("pwd", "") != "survey2026":
+        return "无权访问", 403
+        
+    profiles = db.query(ParticipantProfile).all()
+    output = io.StringIO()
+    writer = csv.writer(output)
+    
+    writer.writerow(['participant_id', 'participant_slot', 'gender', 'age_group', 
+                     'current_residence', 'chengdu_familiarity', 'chongqing_familiarity', 
+                     'professional_background', 'travel_modes', 'travel_other_text', 'create_time'])
+    
+    for p in profiles:
+        writer.writerow([p.participant_id, p.participant_slot, p.gender, p.age_group,
+                         p.current_residence, p.chengdu_familiarity, p.chongqing_familiarity,
+                         p.professional_background, p.travel_modes, p.travel_other_text, p.create_time])
+                         
+    response = app.response_class(output.getvalue(), mimetype='text/csv')
+    response.headers["Content-Disposition"] = "attachment; filename=participant_profiles.csv"
+    return response
+
+@app.route('/admin/export/responses')
+def export_responses():
+    if request.args.get("pwd", "") != "survey2026":
+        return "无权访问", 403
+        
+    responses = db.query(SurveyResponse).all()
+    output = io.StringIO()
+    writer = csv.writer(output)
+    
+    writer.writerow(['participant_id', 'pair_id', 'order_in_participant', 'dimension', 
+                     'dimension_order', 'left_qid', 'right_qid', 'left_image_id', 
+                     'right_image_id', 'choice', 'response_time_sec', 'submit_time'])
+                     
+    for r in responses:
+        writer.writerow([r.participant_id, r.pair_id, r.order_in_participant, r.dimension,
+                         r.dimension_order, r.left_qid, r.right_qid, r.left_image_id,
+                         r.right_image_id, r.choice, r.response_time_sec, r.submit_time])
+                         
+    response = app.response_class(output.getvalue(), mimetype='text/csv')
+    response.headers["Content-Disposition"] = "attachment; filename=survey_responses.csv"
+    return response
+# ======================================================================
 
 if __name__ == '__main__':
     app.run(debug=True, port=5000)
