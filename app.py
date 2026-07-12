@@ -217,5 +217,41 @@ def thank_you():
     </div>
     """
 
+# 简易后台：查看问卷数据（加密码保护，防止公开访问）
+@app.route('/admin/survey_data')
+def view_survey_data():
+    # 访问密码，改成你自己的
+    access_pwd = request.args.get("pwd", "")
+    if access_pwd != "survey2026":
+        return "无权访问", 403
+
+    # 查询用户信息
+    profiles = db.query(ParticipantProfile).all()
+    # 查询最近200条答题记录
+    responses = db.query(SurveyResponse).order_by(SurveyResponse.submit_time.desc()).limit(200).all()
+
+    # 生成简易HTML表格
+    html = """
+    <style>table{border-collapse:collapse;margin:20px 0;} th,td{border:1px solid #ccc;padding:8px 12px;} h2{margin-top:30px;}</style>
+    <h2>📊 用户基础信息（共 {} 人）</h2>
+    <table>
+        <tr><th>用户ID</th><th>槽位</th><th>性别</th><th>年龄段</th><th>提交时间</th></tr>
+    """.format(len(profiles))
+
+    for p in profiles:
+        html += f"<tr><td>{p.participant_id}</td><td>{p.participant_slot}</td><td>{p.gender}</td><td>{p.age_group}</td><td>{p.create_time}</td></tr>"
+    html += "</table>"
+
+    html += f"<h2>📝 最近200条答题记录（共 {db.query(SurveyResponse).count()} 条总记录）</h2>"
+    html += """
+    <table>
+        <tr><th>用户ID</th><th>题目ID</th><th>评价维度</th><th>选择结果</th><th>答题用时</th></tr>
+    """
+    for r in responses:
+        html += f"<tr><td>{r.participant_id}</td><td>{r.pair_id}</td><td>{r.dimension}</td><td>{r.choice}</td><td>{r.response_time_sec}s</td></tr>"
+    html += "</table>"
+
+    return html
+
 if __name__ == '__main__':
     app.run(debug=True, port=5000)
