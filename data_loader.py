@@ -40,13 +40,13 @@ def get_survey_questions(slot_id):
             right_f = str(row.get('right_image_filename', '')).strip()
             
             # 如果表格里的名字自带了 "images/"，我们先把它去掉，防止后面拼重了
-            left_f = left_f.replace('images/', '')
-            right_f = right_f.replace('images/', '')
+            left_f = left_f.replace("images/", "")
+            right_f = right_f.replace("images/", "")
             
             # 核心改动：不再走服务器本地 static，直接拼接成 OSS 上的绝对网络图片地址
             # 假设你在 OSS 上的结构是把图片放在了一个名为 images 的文件夹里
-            left_url = f"{OSS_BASE_URL}/images/{left_f}"
-            right_url = f"{OSS_BASE_URL}/images/{right_f}"
+            left_url = f"{OSS_BASE_URL}/{left_f}"
+            right_url = f"{OSS_BASE_URL}/{right_f}"
             
             questions.append({
                 'order': idx,
