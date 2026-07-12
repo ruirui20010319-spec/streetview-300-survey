@@ -101,6 +101,10 @@ def index():
         
     return render_template('index.html')
 
+@app.route('/test')
+def test_page():
+    return "测试路由生效啦"
+    
 @app.route('/survey')
 def survey():
     if 'user_info' not in session or 'questions' not in session:
