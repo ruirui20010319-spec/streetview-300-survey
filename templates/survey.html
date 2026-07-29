@@ -5,506 +5,355 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>街景感知对比评估</title>
     <style>
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI",
-                sans-serif;
-            background: #f5f5f7;
-            margin: 0;
-            padding: 20px;
-            color: #1d1d1f;
-        }
-        .header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            max-width: 1200px;
-            margin: 0 auto 15px;
-            background: white;
-            padding: 10px 20px;
-            border-radius: 8px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
-        }
-        .progress-bar-container {
-            width: 60%;
-            background: #e5e5e5;
-            height: 12px;
-            border-radius: 6px;
-            overflow: hidden;
-        }
-        .progress-bar {
-            height: 100%;
-            background: #34c759;
-            width: 0%;
-            transition: width 0.3s;
-        }
-        .main-container {
-            max-width: 1200px;
-            margin: 0 auto;
-            display: flex;
-            flex-direction: column;
-            gap: 20px;
-        }
-        .image-container {
-            display: flex;
-            gap: 20px;
-            justify-content: space-between;
-        }
-        .image-box {
-            flex: 1;
-            background: white;
-            padding: 15px;
-            border-radius: 12px;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.05);
-            text-align: center;
-        }
-        .image-box img {
-            width: 100%;
-            height: 420px;
-            border-radius: 8px;
-            object-fit: cover;
-            background: #ececec;
-        }
-        .title-tag {
-            display: inline-block;
-            padding: 4px 12px;
-            background: #0071e3;
-            color: white;
-            border-radius: 12px;
-            font-size: 14px;
-            margin-bottom: 10px;
-            font-weight: bold;
-        }
-        .load-status {
-            min-height: 22px;
-            margin-top: 8px;
-            font-size: 13px;
-            color: #666;
-        }
-        .survey-table {
-            width: 100%;
-            background: white;
-            border-collapse: collapse;
-            border-radius: 12px;
-            overflow: hidden;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.05);
-        }
-        .survey-table th {
-            background: #f5f5f7;
-            padding: 15px;
-            font-size: 15px;
-            border-bottom: 2px solid #e5e5e5;
-        }
-        .survey-table td {
-            padding: 15px;
-            text-align: center;
-            border-bottom: 1px solid #eee;
-            font-size: 15px;
-        }
-        .dim-title {
-            font-weight: bold;
-            color: #333;
-            text-align: left !important;
-            padding-left: 20px !important;
-        }
-        .radio-label {
-            display: block;
-            width: 100%;
-            height: 100%;
-            cursor: pointer;
-            padding: 10px 0;
-            border-radius: 6px;
-        }
-        .radio-label:hover {
-            background: #f5f5f7;
-        }
-        .radio-label input {
-            transform: scale(1.2);
-            cursor: pointer;
-        }
-        .submit-btn-container {
-            text-align: center;
-            margin-top: 10px;
-            margin-bottom: 40px;
-        }
-        .submit-btn {
-            background: #0071e3;
-            color: white;
-            border: none;
-            padding: 14px 60px;
-            font-size: 16px;
-            font-weight: bold;
-            border-radius: 8px;
-            cursor: pointer;
-            box-shadow: 0 4px 12px rgba(0,113,227,0.3);
-        }
-        .submit-btn:disabled {
-            background: #a8a8a8;
-            box-shadow: none;
-            cursor: not-allowed;
-        }
-        .error-row {
-            background-color: #fff2f2 !important;
-        }
-        .global-message {
-            display: none;
-            background: #fff3cd;
-            border: 1px solid #ffe69c;
-            color: #664d03;
-            padding: 12px 16px;
-            border-radius: 8px;
-        }
-        @media (max-width: 800px) {
-            body { padding: 10px; }
-            .header { gap: 10px; flex-wrap: wrap; }
-            .progress-bar-container { width: 100%; order: 3; }
-            .image-container { flex-direction: column; }
-            .image-box img { height: 280px; }
-            .survey-table th, .survey-table td {
-                padding: 8px 4px;
-                font-size: 13px;
-            }
-            .submit-btn { width: 100%; padding: 14px 10px; }
+        * { box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background:#f5f5f7; margin:0; padding:18px; color:#1d1d1f; }
+        .header { display:flex; justify-content:space-between; align-items:center; gap:16px; max-width:1280px; margin:0 auto 14px; background:#fff; padding:12px 18px; border-radius:10px; box-shadow:0 2px 5px rgba(0,0,0,.05); }
+        .progress-wrap { flex:1; max-width:620px; }
+        .progress-bar-container { width:100%; background:#e5e5e5; height:12px; border-radius:6px; overflow:hidden; }
+        .progress-bar { height:100%; background:#34c759; width:0; transition:width .25s; }
+        .main-container { max-width:1280px; margin:0 auto; display:flex; flex-direction:column; gap:16px; }
+        .instruction-strip { background:#fff8e6; border:1px solid #efd697; border-radius:10px; padding:11px 14px; font-size:14px; line-height:1.6; }
+        .image-container { display:flex; gap:18px; }
+        .image-box { flex:1; min-width:0; background:#fff; padding:13px; border-radius:12px; box-shadow:0 4px 12px rgba(0,0,0,.05); text-align:center; }
+        .image-box img { width:100%; height:400px; border-radius:8px; object-fit:cover; background:#ececec; }
+        .title-tag { display:inline-block; padding:4px 13px; background:#0071e3; color:#fff; border-radius:13px; font-size:14px; margin-bottom:9px; font-weight:700; }
+        .load-status { min-height:21px; margin-top:7px; font-size:13px; color:#666; }
+        .survey-table { width:100%; background:#fff; border-collapse:collapse; border-radius:12px; overflow:hidden; box-shadow:0 4px 12px rgba(0,0,0,.05); }
+        .survey-table th { background:#f5f5f7; padding:13px 8px; font-size:14px; border-bottom:2px solid #e5e5e5; }
+        .survey-table td { padding:11px 8px; text-align:center; border-bottom:1px solid #eee; font-size:14px; }
+        .dim-title { text-align:left !important; padding-left:16px !important; }
+        .dim-label { font-weight:750; display:block; margin-bottom:3px; }
+        .dim-question { color:#555; line-height:1.45; }
+        .radio-label { display:block; width:100%; cursor:pointer; padding:10px 0; border-radius:6px; }
+        .radio-label:hover { background:#f5f5f7; }
+        .radio-label input { transform:scale(1.25); cursor:pointer; }
+        .radio-label input:disabled { cursor:not-allowed; }
+        .submit-row { display:flex; align-items:center; justify-content:center; gap:18px; margin:4px 0 38px; }
+        .answered-count { color:#555; min-width:100px; text-align:right; }
+        .submit-btn { background:#0071e3; color:#fff; border:none; padding:14px 54px; font-size:16px; font-weight:750; border-radius:8px; cursor:pointer; box-shadow:0 4px 12px rgba(0,113,227,.25); }
+        .submit-btn:disabled { background:#a8a8a8; box-shadow:none; cursor:not-allowed; }
+        .error-row { background:#fff2f2 !important; }
+        .global-message { display:none; background:#fff3cd; border:1px solid #ffe69c; color:#664d03; padding:12px 16px; border-radius:8px; }
+        .modal-backdrop { position:fixed; inset:0; background:rgba(0,0,0,.48); display:flex; align-items:center; justify-content:center; z-index:1000; padding:16px; }
+        .modal { max-width:850px; max-height:92vh; overflow:auto; background:#fff; border-radius:14px; padding:24px; box-shadow:0 12px 40px rgba(0,0,0,.25); }
+        .definition-grid { display:grid; grid-template-columns:1fr 1fr; gap:9px 20px; margin:15px 0; }
+        .definition-item { padding:9px 11px; background:#f7f7f9; border-radius:8px; line-height:1.5; }
+        .start-btn { width:100%; border:0; border-radius:8px; background:#0071e3; color:#fff; padding:12px; font-size:17px; font-weight:700; cursor:pointer; }
+        @media (max-width:850px) {
+            body { padding:9px; }
+            .header { flex-wrap:wrap; }
+            .progress-wrap { width:100%; flex-basis:100%; }
+            .image-container { flex-direction:column; }
+            .image-box img { height:280px; }
+            .survey-table th, .survey-table td { padding:8px 4px; font-size:12px; }
+            .dim-question { font-size:12px; }
+            .submit-row { flex-direction:column; gap:8px; }
+            .answered-count { text-align:center; }
+            .submit-btn { width:100%; padding:14px 8px; }
+            .definition-grid { grid-template-columns:1fr; }
         }
     </style>
 </head>
 <body>
-    <div class="header">
-        <div style="font-weight:bold;font-size:18px;">
-            🏞️ 街景感知两两比较评估
+<div class="modal-backdrop" id="introModal" role="dialog" aria-modal="true" aria-labelledby="introTitle">
+    <div class="modal">
+        <h2 id="introTitle">正式答题说明</h2>
+        <p>每组将显示两张街景图片，请分别对8项感知进行比较。</p>
+        <ul>
+            <li>“左侧A更符合”：左图在该项特征上更明显。</li>
+            <li>“两者差不多”：两张图片在该项感受上接近，不是跳过回答。</li>
+            <li>“右侧B更符合”：右图在该项特征上更明显。</li>
+            <li>不同项目含义和方向不同，请逐项阅读；所有8项完成后才能进入下一组。</li>
+        </ul>
+        <div class="definition-grid">
+            {% for dimension in survey_dimensions %}
+            <div class="definition-item"><strong>{{ dimension.label }}</strong>：{{ dimension.definition }}</div>
+            {% endfor %}
         </div>
-        <div class="progress-bar-container">
-            <div id="progressBar" class="progress-bar"></div>
+        <p>请依据第一直观感受作答，不需要判断图片所在城市。预计总用时{{ estimated_time }}。</p>
+        <button id="startButton" class="start-btn" type="button">我已了解，开始正式答题</button>
+    </div>
+</div>
+
+<div class="header">
+    <div style="font-weight:750;font-size:18px;">街景感知对比评估</div>
+    <div class="progress-wrap">
+        <div style="display:flex;justify-content:space-between;margin-bottom:5px;font-size:13px;">
+            <span>当前进度</span><span id="progressText">0 / 30</span>
         </div>
-        <div id="progressText"
-             style="font-weight:bold;color:#666;">
-            正在加载……
+        <div class="progress-bar-container"><div class="progress-bar" id="progressBar"></div></div>
+    </div>
+</div>
+
+<div class="main-container">
+    <div class="instruction-strip">
+        “两者差不多”表示两图在该项感受上接近。两张图片全部加载成功前不能作答；请勿打开多个窗口同时提交。
+    </div>
+    <div id="globalMessage" class="global-message" role="alert"></div>
+
+    <div class="image-container">
+        <div class="image-box">
+            <div class="title-tag">左侧 A</div>
+            <img id="leftImage" alt="左侧街景图片">
+            <div id="leftStatus" class="load-status">正在加载左图……</div>
+        </div>
+        <div class="image-box">
+            <div class="title-tag">右侧 B</div>
+            <img id="rightImage" alt="右侧街景图片">
+            <div id="rightStatus" class="load-status">正在加载右图……</div>
         </div>
     </div>
 
-    <div class="main-container">
-        <div id="globalMessage" class="global-message"></div>
-
-        <div class="image-container">
-            <div class="image-box">
-                <span class="title-tag">A组街景（左侧）</span>
-                <div>
-                    <img id="leftImage" alt="左侧街景载入中">
-                </div>
-                <div id="leftStatus" class="load-status">
-                    正在加载左图……
-                </div>
-            </div>
-
-            <div class="image-box">
-                <span class="title-tag">B组街景（右侧）</span>
-                <div>
-                    <img id="rightImage" alt="右侧街景载入中">
-                </div>
-                <div id="rightStatus" class="load-status">
-                    正在加载右图……
-                </div>
-            </div>
+    <form id="surveyForm">
+        <table class="survey-table">
+            <thead>
+            <tr>
+                <th style="width:46%;text-align:left;padding-left:16px;">评价项目与问题</th>
+                <th style="width:18%;">左侧A更符合</th>
+                <th style="width:18%;">两者差不多</th>
+                <th style="width:18%;">右侧B更符合</th>
+            </tr>
+            </thead>
+            <tbody id="tableBody"></tbody>
+        </table>
+        <div class="submit-row">
+            <div class="answered-count" id="answeredCount">已回答 0 / {{ expected_dimension_count }}</div>
+            <button id="submitButton" type="submit" class="submit-btn" disabled>请先阅读答题说明</button>
         </div>
+    </form>
+</div>
 
-        <form id="surveyForm">
-            <table class="survey-table">
-                <thead>
-                    <tr>
-                        <th style="width:34%;">感知评估维度</th>
-                        <th style="width:22%;">👈 左侧A更符合</th>
-                        <th style="width:22%;">🤝 两者差不多</th>
-                        <th style="width:22%;">👉 右侧B更符合</th>
-                    </tr>
-                </thead>
-                <tbody id="tableBody"></tbody>
-            </table>
+<script>
+    const dimsData = {{ survey_dimensions | tojson }};
+    const dimensions = dimsData.map(item => item.key);
+    const expectedDimensionCount = {{ expected_dimension_count }};
 
-            <div class="submit-btn-container">
-                <button id="submitButton"
-                        type="submit"
-                        class="submit-btn"
-                        disabled>
-                    请等待两张图片加载完成
-                </button>
-            </div>
-        </form>
-    </div>
+    let currentQuestion = null;
+    let leftImageLoaded = false;
+    let rightImageLoaded = false;
+    let bothImagesLoadedAt = null;
+    let isSubmitting = false;
+    let introAcknowledged = false;
 
-    <script>
-        const dimensions = [
-            "beauty", "safety", "vitality", "depression",
-            "wealthy", "boring", "harmony", "active"
-        ];
+    const submitButton = document.getElementById("submitButton");
+    const leftImage = document.getElementById("leftImage");
+    const rightImage = document.getElementById("rightImage");
+    const leftStatus = document.getElementById("leftStatus");
+    const rightStatus = document.getElementById("rightStatus");
+    const globalMessage = document.getElementById("globalMessage");
+    const answeredCount = document.getElementById("answeredCount");
 
-        const dimsData = [
-            {id:"beauty", name:"1. 美观度（哪个更美丽、赏心悦目？）"},
-            {id:"safety", name:"2. 安全感（哪个让你感觉更安全、放心？）"},
-            {id:"vitality", name:"3. 活力度（哪个看起来更有城市生机与活力？）"},
-            {id:"depression", name:"4. 压抑感（哪个环境让你觉得更压抑、沉闷？）"},
-            {id:"wealthy", name:"5. 富裕度（哪个街区视觉上看起来更富裕、高级？）"},
-            {id:"boring", name:"6. 枯燥度（哪个街道环境让你觉得更无趣、枯燥？）"},
-            {id:"harmony", name:"7. 和谐度（哪个街景建筑与绿化整体更和谐？）"},
-            {id:"active", name:"8. 活动意愿（哪个街道更想让你下车走走、逛逛？）"}
-        ];
-
-        let currentQuestion = null;
-        let leftImageLoaded = false;
-        let rightImageLoaded = false;
-        let bothImagesLoadedAt = null;
-        let isSubmitting = false;
-
-        const submitButton = document.getElementById("submitButton");
-        const leftImage = document.getElementById("leftImage");
-        const rightImage = document.getElementById("rightImage");
-        const leftStatus = document.getElementById("leftStatus");
-        const rightStatus = document.getElementById("rightStatus");
-        const globalMessage = document.getElementById("globalMessage");
-
-        function showMessage(message) {
-            globalMessage.textContent = message;
-            globalMessage.style.display = "block";
-        }
-
-        function hideMessage() {
-            globalMessage.textContent = "";
-            globalMessage.style.display = "none";
-        }
-
-        function renderTableSkeleton() {
-            let html = "";
-            dimsData.forEach(function(dimension) {
-                html += `<tr id="row_${dimension.id}">`;
-                html += `<td class="dim-title">${dimension.name}</td>`;
-                html += `<td><label class="radio-label">
-                    <input type="radio" name="${dimension.id}" value="left">
-                    </label></td>`;
-                html += `<td><label class="radio-label">
-                    <input type="radio" name="${dimension.id}" value="tie">
-                    </label></td>`;
-                html += `<td><label class="radio-label">
-                    <input type="radio" name="${dimension.id}" value="right">
-                    </label></td>`;
-                html += "</tr>";
-            });
-            document.getElementById("tableBody").innerHTML = html;
-        }
-
-        function updateSubmitButton() {
-            if (isSubmitting) {
-                submitButton.disabled = true;
-                submitButton.textContent = "正在安全保存，请勿重复点击……";
-                return;
-            }
-
-            if (!leftImageLoaded || !rightImageLoaded) {
-                submitButton.disabled = true;
-                submitButton.textContent = "请等待两张图片加载完成";
-                return;
-            }
-
-            submitButton.disabled = false;
-            submitButton.textContent = "提交本组比对，进入下一题 ➔";
-        }
-
-        function markImageLoaded(side) {
-            if (side === "left") {
-                leftImageLoaded = true;
-                leftStatus.textContent = "✓ 左图加载成功";
-            } else {
-                rightImageLoaded = true;
-                rightStatus.textContent = "✓ 右图加载成功";
-            }
-
-            if (leftImageLoaded && rightImageLoaded && !bothImagesLoadedAt) {
-                bothImagesLoadedAt = new Date().toISOString();
-            }
-            updateSubmitButton();
-        }
-
-        function markImageFailed(side) {
-            if (side === "left") {
-                leftImageLoaded = false;
-                leftStatus.textContent = "✕ 左图加载失败，请刷新页面";
-            } else {
-                rightImageLoaded = false;
-                rightStatus.textContent = "✕ 右图加载失败，请刷新页面";
-            }
-            showMessage("图片加载失败，本题禁止提交。请刷新页面重试。");
-            updateSubmitButton();
-        }
-
-        leftImage.onload = function() {
-            markImageLoaded("left");
-        };
-        rightImage.onload = function() {
-            markImageLoaded("right");
-        };
-        leftImage.onerror = function() {
-            markImageFailed("left");
-        };
-        rightImage.onerror = function() {
-            markImageFailed("right");
-        };
-
-        function resetQuestionState() {
-            currentQuestion = null;
-            leftImageLoaded = false;
-            rightImageLoaded = false;
-            bothImagesLoadedAt = null;
-            isSubmitting = false;
-
-            leftImage.removeAttribute("src");
-            rightImage.removeAttribute("src");
-            leftStatus.textContent = "正在加载左图……";
-            rightStatus.textContent = "正在加载右图……";
-            document.getElementById("surveyForm").reset();
-
-            dimensions.forEach(function(dimension) {
-                document
-                    .getElementById(`row_${dimension}`)
-                    .classList.remove("error-row");
-            });
-
-            hideMessage();
-            updateSubmitButton();
-        }
-
-        async function loadQuestion() {
-            resetQuestionState();
-
-            try {
-                const response = await fetch(
-                    "/get_current_question",
-                    {cache: "no-store"}
-                );
-                const data = await response.json();
-
-                if (data.status === "completed") {
-                    window.location.href = "/thank_you";
-                    return;
-                }
-
-                if (!response.ok || data.status !== "success") {
-                    throw new Error(data.message || "加载题目失败");
-                }
-
-                currentQuestion = data.question;
-
-                const displayIndex = data.current_index + 1;
-                const percent =
-                    (displayIndex / data.total_questions) * 100;
-
-                document.getElementById("progressBar").style.width =
-                    `${percent}%`;
-                document.getElementById("progressText").textContent =
-                    `${displayIndex} / ${data.total_questions}`;
-
-                leftImage.src = currentQuestion.left_img_url;
-                rightImage.src = currentQuestion.right_img_url;
-            } catch (error) {
-                console.error(error);
-                showMessage(
-                    `题目加载失败：${error.message}。请刷新页面重试。`
-                );
-            }
-        }
-
-        function collectChoices() {
-            const choices = {};
-            const missing = [];
-
-            dimensions.forEach(function(dimension) {
-                const selected = document.querySelector(
-                    `input[name="${dimension}"]:checked`
-                );
-                const row = document.getElementById(
-                    `row_${dimension}`
-                );
-
-                if (!selected) {
-                    missing.push(dimension);
-                    row.classList.add("error-row");
-                } else {
-                    choices[dimension] = selected.value;
-                    row.classList.remove("error-row");
-                }
-            });
-
-            return {choices, missing};
-        }
-
-        async function submitTurn(event) {
-            event.preventDefault();
-
-            if (!currentQuestion || isSubmitting) {
-                return;
-            }
-
-            if (!leftImageLoaded || !rightImageLoaded) {
-                showMessage("两张图片尚未全部加载，当前不能提交。");
-                return;
-            }
-
-            const result = collectChoices();
-            if (result.missing.length > 0) {
-                showMessage(
-                    "请完成全部8个评价指标，未填写项目已标红。"
-                );
-                return;
-            }
-
-            isSubmitting = true;
-            hideMessage();
-            updateSubmitButton();
-
-            const payload = {
-                pair_id: currentQuestion.pair_id,
-                order_in_participant: currentQuestion.order,
-                choices: result.choices,
-                left_image_loaded: leftImageLoaded,
-                right_image_loaded: rightImageLoaded,
-                both_images_loaded_at: bothImagesLoadedAt,
-                question_submit_time_client:
-                    new Date().toISOString()
-            };
-
-            try {
-                const response = await fetch("/submit_response", {
-                    method: "POST",
-                    headers: {"Content-Type": "application/json"},
-                    body: JSON.stringify(payload)
-                });
-                const data = await response.json();
-
-                if (!response.ok ||
-                    !["success", "completed"].includes(data.status)) {
-                    throw new Error(data.message || "保存失败");
-                }
-
-                if (data.completed || data.status === "completed") {
-                    window.location.href = "/thank_you";
-                    return;
-                }
-
-                await loadQuestion();
-            } catch (error) {
-                console.error(error);
-                isSubmitting = false;
-                showMessage(
-                    `数据保存失败：${error.message}。请勿刷新，稍后重试。`
-                );
-                updateSubmitButton();
-            }
-        }
-
-        document
-            .getElementById("surveyForm")
-            .addEventListener("submit", submitTurn);
-
-        window.addEventListener("load", function() {
-            renderTableSkeleton();
-            loadQuestion();
+    function showMessage(message) {
+        globalMessage.textContent = message;
+        globalMessage.style.display = "block";
+    }
+    function hideMessage() {
+        globalMessage.textContent = "";
+        globalMessage.style.display = "none";
+    }
+    function setRadiosDisabled(disabled) {
+        document.querySelectorAll('#tableBody input[type="radio"]').forEach(input => { input.disabled = disabled; });
+    }
+    function renderTableSkeleton() {
+        document.getElementById("tableBody").innerHTML = dimsData.map(dimension => `
+            <tr id="row_${dimension.key}">
+                <td class="dim-title">
+                    <span class="dim-label">${dimension.order}. ${dimension.label}</span>
+                    <span class="dim-question">${dimension.description}</span>
+                </td>
+                <td><label class="radio-label"><input type="radio" name="${dimension.key}" value="left"></label></td>
+                <td><label class="radio-label"><input type="radio" name="${dimension.key}" value="tie"></label></td>
+                <td><label class="radio-label"><input type="radio" name="${dimension.key}" value="right"></label></td>
+            </tr>`).join("");
+        document.querySelectorAll('#tableBody input[type="radio"]').forEach(input => {
+            input.addEventListener("change", updateAnsweredState);
         });
-    </script>
+        setRadiosDisabled(true);
+    }
+    function selectedCount() {
+        return dimensions.filter(key => document.querySelector(`input[name="${key}"]:checked`)).length;
+    }
+    function updateAnsweredState() {
+        const count = selectedCount();
+        answeredCount.textContent = `已回答 ${count} / ${expectedDimensionCount}`;
+        updateSubmitButton();
+    }
+    function updateSubmitButton() {
+        if (!introAcknowledged) {
+            submitButton.disabled = true;
+            submitButton.textContent = "请先阅读答题说明";
+            return;
+        }
+        if (isSubmitting) {
+            submitButton.disabled = true;
+            submitButton.textContent = "正在安全保存，请勿重复点击……";
+            return;
+        }
+        if (!leftImageLoaded || !rightImageLoaded) {
+            submitButton.disabled = true;
+            submitButton.textContent = "请等待两张图片加载完成";
+            return;
+        }
+        const count = selectedCount();
+        if (count < expectedDimensionCount) {
+            submitButton.disabled = true;
+            submitButton.textContent = `还需完成 ${expectedDimensionCount - count} 项`;
+            return;
+        }
+        submitButton.disabled = false;
+        submitButton.textContent = "提交本组比对，进入下一题";
+    }
+    function markImageLoaded(side) {
+        if (side === "left") {
+            leftImageLoaded = true;
+            leftStatus.textContent = "✓ 左图加载成功";
+        } else {
+            rightImageLoaded = true;
+            rightStatus.textContent = "✓ 右图加载成功";
+        }
+        if (leftImageLoaded && rightImageLoaded && !bothImagesLoadedAt) {
+            bothImagesLoadedAt = new Date().toISOString();
+            if (introAcknowledged) setRadiosDisabled(false);
+        }
+        updateSubmitButton();
+    }
+    function markImageFailed(side) {
+        if (side === "left") {
+            leftImageLoaded = false;
+            leftStatus.textContent = "✕ 左图加载失败，请刷新页面";
+        } else {
+            rightImageLoaded = false;
+            rightStatus.textContent = "✕ 右图加载失败，请刷新页面";
+        }
+        setRadiosDisabled(true);
+        showMessage("图片加载失败，本题禁止提交。请刷新页面重试。");
+        updateSubmitButton();
+    }
+    leftImage.onload = () => markImageLoaded("left");
+    rightImage.onload = () => markImageLoaded("right");
+    leftImage.onerror = () => markImageFailed("left");
+    rightImage.onerror = () => markImageFailed("right");
+
+    function resetQuestionState() {
+        currentQuestion = null;
+        leftImageLoaded = false;
+        rightImageLoaded = false;
+        bothImagesLoadedAt = null;
+        isSubmitting = false;
+        leftImage.removeAttribute("src");
+        rightImage.removeAttribute("src");
+        leftStatus.textContent = "正在加载左图……";
+        rightStatus.textContent = "正在加载右图……";
+        document.getElementById("surveyForm").reset();
+        dimensions.forEach(key => document.getElementById(`row_${key}`).classList.remove("error-row"));
+        answeredCount.textContent = `已回答 0 / ${expectedDimensionCount}`;
+        setRadiosDisabled(true);
+        hideMessage();
+        updateSubmitButton();
+    }
+
+    async function loadQuestion() {
+        resetQuestionState();
+        try {
+            const response = await fetch("/get_current_question", {cache:"no-store", credentials:"same-origin"});
+            const data = await response.json();
+            if (data.status === "completed") {
+                window.location.href = "/thank_you";
+                return;
+            }
+            if (!response.ok || data.status !== "success") throw new Error(data.message || "加载题目失败");
+            currentQuestion = data.question;
+            const displayIndex = data.current_index + 1;
+            const percent = (displayIndex / data.total_questions) * 100;
+            document.getElementById("progressBar").style.width = `${percent}%`;
+            document.getElementById("progressText").textContent = `${displayIndex} / ${data.total_questions}`;
+            leftImage.src = currentQuestion.left_img_url;
+            rightImage.src = currentQuestion.right_img_url;
+        } catch (error) {
+            console.error(error);
+            showMessage(`题目加载失败：${error.message}。请刷新页面重试。`);
+        }
+    }
+
+    function collectChoices() {
+        const choices = {};
+        const missing = [];
+        dimensions.forEach(key => {
+            const selected = document.querySelector(`input[name="${key}"]:checked`);
+            const row = document.getElementById(`row_${key}`);
+            if (!selected) {
+                missing.push(key);
+                row.classList.add("error-row");
+            } else {
+                choices[key] = selected.value;
+                row.classList.remove("error-row");
+            }
+        });
+        return {choices, missing};
+    }
+
+    async function submitTurn(event) {
+        event.preventDefault();
+        if (!currentQuestion || isSubmitting) return;
+        if (!leftImageLoaded || !rightImageLoaded) {
+            showMessage("两张图片尚未全部加载，当前不能提交。");
+            return;
+        }
+        const result = collectChoices();
+        if (result.missing.length > 0) {
+            showMessage("请完成全部8个评价项目，未填写项目已标红。");
+            updateAnsweredState();
+            return;
+        }
+        isSubmitting = true;
+        hideMessage();
+        setRadiosDisabled(true);
+        updateSubmitButton();
+        const payload = {
+            pair_id: currentQuestion.pair_id,
+            order_in_participant: currentQuestion.order,
+            choices: result.choices,
+            left_image_loaded: leftImageLoaded,
+            right_image_loaded: rightImageLoaded,
+            both_images_loaded_at: bothImagesLoadedAt,
+            question_submit_time_client: new Date().toISOString()
+        };
+        try {
+            const response = await fetch("/submit_response", {
+                method:"POST",
+                credentials:"same-origin",
+                headers:{"Content-Type":"application/json"},
+                body:JSON.stringify(payload)
+            });
+            const data = await response.json();
+            if (!response.ok || !["success", "completed"].includes(data.status)) {
+                throw new Error(data.message || "保存失败");
+            }
+            if (data.completed || data.status === "completed") {
+                window.location.href = "/thank_you";
+                return;
+            }
+            await loadQuestion();
+        } catch (error) {
+            console.error(error);
+            isSubmitting = false;
+            showMessage(`数据保存失败：${error.message}。请勿重复点击，稍后重试。`);
+            if (leftImageLoaded && rightImageLoaded) setRadiosDisabled(false);
+            updateSubmitButton();
+        }
+    }
+
+    document.getElementById("surveyForm").addEventListener("submit", submitTurn);
+    document.getElementById("startButton").addEventListener("click", function () {
+        introAcknowledged = true;
+        document.getElementById("introModal").style.display = "none";
+        if (leftImageLoaded && rightImageLoaded) setRadiosDisabled(false);
+        updateSubmitButton();
+    });
+    window.addEventListener("load", function () {
+        renderTableSkeleton();
+        loadQuestion();
+    });
+</script>
 </body>
 </html>

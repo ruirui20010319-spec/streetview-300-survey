@@ -1,3 +1,7 @@
+"""Database models for the 500-image pairwise street-view survey."""
+
+from __future__ import annotations
+
 from datetime import datetime
 
 from sqlalchemy import (
@@ -5,6 +9,7 @@ from sqlalchemy import (
     Column,
     DateTime,
     Float,
+    Index,
     Integer,
     String,
     Text,
@@ -24,7 +29,10 @@ class SurveyConfig(Base):
     dimension_key = Column(String, nullable=False)
     dimension_label = Column(String, nullable=False)
     dimension_description = Column(Text, nullable=True)
+    dimension_definition = Column(Text, nullable=True)
     dimension_order = Column(Integer, nullable=False)
+    score_direction = Column(Integer, nullable=False, default=1)
+    high_score_meaning = Column(Text, nullable=True)
     is_active = Column(Boolean, nullable=False, default=True)
     expected_pairs_per_attempt = Column(Integer, nullable=False, default=30)
     expected_dimension_count = Column(Integer, nullable=False, default=8)
@@ -36,6 +44,11 @@ class SurveyConfig(Base):
             "dimension_config_version",
             "dimension_key",
             name="uq_dimension_version_key",
+        ),
+        UniqueConstraint(
+            "dimension_config_version",
+            "dimension_order",
+            name="uq_dimension_version_order",
         ),
     )
 
@@ -50,12 +63,17 @@ class ImageMaster(Base):
     latitude = Column(Float, nullable=True)
     capture_date = Column(String, nullable=True)
     capture_year = Column(Integer, nullable=True)
+    year_month = Column(String, nullable=True)
     cluster_id = Column(String, nullable=True)
     image_filename = Column(Text, nullable=True)
     image_relative_path = Column(Text, nullable=True)
     oss_url = Column(Text, nullable=False)
     source_master_version = Column(String, nullable=True)
     image_sha256_or_oss_etag = Column(String, nullable=True)
+    sample_origin = Column(String, nullable=True)
+    sample_role = Column(String, nullable=True)
+    point_id = Column(String, nullable=True)
+    road_segment_id = Column(String, nullable=True)
     is_active = Column(Boolean, nullable=False, default=True)
 
 
@@ -102,6 +120,11 @@ class PairAssignment(Base):
             "pair_id",
             name="uq_assignment_slot_pair",
         ),
+        Index(
+            "ix_assignment_version_pair_id",
+            "assignment_version",
+            "pair_id",
+        ),
     )
 
 
@@ -131,6 +154,11 @@ class SurveySlot(Base):
             "participant_slot",
             name="uq_slot_version",
         ),
+        Index(
+            "ix_slot_version_status",
+            "assignment_version",
+            "slot_status",
+        ),
     )
 
 
@@ -141,6 +169,7 @@ class SurveyAttempt(Base):
     participant_id = Column(String, nullable=False, index=True)
     participant_slot = Column(String, nullable=False, index=True)
     session_id = Column(String, nullable=False, index=True)
+    profile_submission_token = Column(String, nullable=True, unique=True, index=True)
 
     survey_version = Column(String, nullable=False)
     assignment_version = Column(String, nullable=False)
@@ -155,7 +184,7 @@ class SurveyAttempt(Base):
     current_order = Column(Integer, nullable=False, default=0)
     answered_pair_count = Column(Integer, nullable=False, default=0)
 
-    consent_given = Column(Boolean, nullable=False, default=True)
+    consent_given = Column(Boolean, nullable=False, default=False)
     consent_version = Column(String, nullable=True)
     consent_at = Column(DateTime, nullable=True)
 
@@ -185,9 +214,19 @@ class SurveyAttempt(Base):
     screen_height = Column(Integer, nullable=True)
     language = Column(String, nullable=True)
     timezone = Column(String, nullable=True)
+    user_agent = Column(Text, nullable=True)
+    ip_hash = Column(String, nullable=True)
 
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
     updated_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+    __table_args__ = (
+        Index(
+            "ix_attempt_assignment_status",
+            "assignment_version",
+            "completion_status",
+        ),
+    )
 
 
 class SurveyResponse(Base):
@@ -209,6 +248,7 @@ class SurveyResponse(Base):
     order_in_participant = Column(Integer, nullable=False)
     dimension_key = Column(String, nullable=False)
     dimension_order = Column(Integer, nullable=False)
+    display_position = Column(Integer, nullable=False)
 
     left_qid = Column(String, nullable=False)
     right_qid = Column(String, nullable=False)
@@ -236,6 +276,12 @@ class SurveyResponse(Base):
             "dimension_key",
             name="uq_attempt_pair_dimension",
         ),
+        Index(
+            "ix_response_assignment_slot_order",
+            "assignment_version",
+            "participant_slot",
+            "order_in_participant",
+        ),
     )
 
 
@@ -249,7 +295,7 @@ class SurveyEventLog(Base):
     session_id = Column(String, nullable=True)
     pair_id = Column(String, nullable=True)
     order_in_participant = Column(Integer, nullable=True)
-    event_type = Column(String, nullable=False)
+    event_type = Column(String, nullable=False, index=True)
     client_time = Column(DateTime, nullable=True)
     server_time = Column(DateTime, nullable=False, default=datetime.utcnow)
     event_data = Column(Text, nullable=True)

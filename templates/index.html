@@ -2,103 +2,243 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <title>街景感知学术问卷平台 - 基本信息</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ survey_title }} - 基本信息</title>
     <style>
-        body { font-family: -apple-system, sans-serif; background: #f5f5f7; color: #1d1d1f; padding: 40px 20px; }
-        .container { max-width: 600px; margin: 0 auto; background: white; padding: 30px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); }
-        h2 { text-align: center; color: #0071e3; }
+        * { box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+            background: #f5f5f7;
+            color: #1d1d1f;
+            margin: 0;
+            padding: 28px 16px;
+        }
+        .container {
+            max-width: 720px;
+            margin: 0 auto;
+            background: #fff;
+            padding: 30px;
+            border-radius: 14px;
+            box-shadow: 0 4px 16px rgba(0,0,0,.06);
+        }
+        h1 { text-align: center; color: #0071e3; font-size: 27px; }
+        h2 { font-size: 19px; margin-top: 0; }
+        .intro, .consent-box, .device-note, .error-box {
+            padding: 16px;
+            border-radius: 10px;
+            margin: 16px 0 22px;
+            line-height: 1.7;
+        }
+        .intro { background: #f5f8ff; border: 1px solid #d7e6ff; }
+        .consent-box { background: #f8fbf8; border: 1px solid #cfe6d3; }
+        .device-note { background: #fff8e6; border: 1px solid #f1d99b; }
+        .error-box { background: #fff1f1; border: 1px solid #f0baba; color: #9b1c1c; }
         .form-group { margin-bottom: 20px; }
-        label { font-weight: bold; display: block; margin-bottom: 8px; }
-        select, input[type="text"] { width: 100%; padding: 10px; border: 1px solid #d2d2d7; border-radius: 8px; font-size: 16px; box-sizing: border-radius; }
-        .checkbox-group { display: flex; flex-direction: column; gap: 8px; }
-        .btn-submit { width: 100%; padding: 12px; background: #0071e3; color: white; border: none; border-radius: 8px; font-size: 18px; cursor: pointer; font-weight: bold; }
-        .btn-submit:hover { background: #0077ed; }
+        label { font-weight: 650; display: block; margin-bottom: 8px; }
+        select, input[type="text"] {
+            width: 100%;
+            padding: 11px;
+            border: 1px solid #d2d2d7;
+            border-radius: 8px;
+            font-size: 16px;
+            background: #fff;
+        }
+        .checkbox-group { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+        .checkbox-group label, .consent-label {
+            font-weight: normal;
+            display: flex;
+            gap: 8px;
+            align-items: flex-start;
+            margin: 0;
+        }
+        .checkbox-group input, .consent-label input { margin-top: 4px; }
+        .btn-submit {
+            width: 100%;
+            padding: 13px;
+            background: #0071e3;
+            color: #fff;
+            border: none;
+            border-radius: 8px;
+            font-size: 18px;
+            cursor: pointer;
+            font-weight: 700;
+        }
+        .btn-submit:disabled { background: #999; cursor: not-allowed; }
+        .small { color: #666; font-size: 14px; }
+        @media (max-width: 640px) {
+            .container { padding: 20px; }
+            .checkbox-group { grid-template-columns: 1fr; }
+        }
     </style>
 </head>
 <body>
-    <div class="container">
-        <h2>街景感知学术问卷调查</h2>
-        <p style="color: #666; text-align: center;">欢迎参与本次研究，请先填写您的基本信息：</p>
-        <hr style="border: 0; border-top: 1px solid #e5e5e5; margin-bottom: 20px;">
-        
-        <form method="POST">
-            <div class="form-group">
-                <label>1. 您的性别是？</label>
-                <select name="gender" required>
-                    <option value="">-- 请选择 --</option>
-                    <option value="male">男</option>
-                    <option value="female">女</option>
-                </select>
-            </div>
+<div class="container">
+    <h1>{{ survey_title }}</h1>
 
-            <div class="form-group">
-                <label>2. 您的年龄段是？</label>
-                <select name="age_group" required>
-                    <option value="">-- 请选择 --</option>
-                    <option value="18_44">18–44岁</option>
-                    <option value="45_59">45–59岁</option>
-                    <option value="60plus">60岁及以上</option>
-                </select>
-            </div>
-
-            <div class="form-group">
-                <label>3. 您当前主要常住地是？</label>
-                <select name="current_residence" required>
-                    <option value="">-- 请选择 --</option>
-                    <option value="chengdu">成都</option>
-                    <option value="chongqing">重庆</option>
-                    <option value="other">其他城市</option>
-                </select>
-            </div>
-
-            <div class="form-group">
-                <label>4. 您对成都街道环境的熟悉程度是？</label>
-                <select name="chengdu_familiarity" required>
-                    <option value="">-- 请选择 --</option>
-                    <option value="1">完全不熟悉</option>
-                    <option value="2">较不熟悉</option>
-                    <option value="3">一般</option>
-                    <option value="4">较熟悉</option>
-                    <option value="5">非常熟悉</option>
-                </select>
-            </div>
-
-            <div class="form-group">
-                <label>5. 您对重庆街道环境的熟悉程度是？</label>
-                <select name="chongqing_familiarity" required>
-                    <option value="">-- 请选择 --</option>
-                    <option value="1">完全不熟悉</option>
-                    <option value="2">较不熟悉</option>
-                    <option value="3">一般</option>
-                    <option value="4">较熟悉</option>
-                    <option value="5">非常熟悉</option>
-                </select>
-            </div>
-
-            <div class="form-group">
-                <label>6. 您是否具有规划、建筑、景观、交通、地理等相关专业背景？</label>
-                <select name="professional_background" required>
-                    <option value="">-- 请选择 --</option>
-                    <option value="related">相关专业背景</option>
-                    <option value="unrelated">非相关专业背景</option>
-                </select>
-            </div>
-
-            <div class="form-group">
-                <label>7. 您日常主要出行方式是？（多选）</label>
-                <div class="checkbox-group">
-                    <label style="font-weight: normal;"><input type="checkbox" name="travel_walk"> 步行</label>
-                    <label style="font-weight: normal;"><input type="checkbox" name="travel_bike_ebike"> 骑行 / 电动车</label>
-                    <label style="font-weight: normal;"><input type="checkbox" name="travel_public_transit"> 公交地铁</label>
-                    <label style="font-weight: normal;"><input type="checkbox" name="travel_private_car"> 私家车</label>
-                    <label style="font-weight: normal;"><input type="checkbox" name="travel_taxi_ridehailing"> 网约车 / 出租车</label>
-                    <label style="font-weight: normal;"><input type="checkbox" name="travel_other"> 其他</label>
-                </div>
-                <input type="text" name="travel_other_text" placeholder="若选择其他，请在此补充说明" style="margin-top: 8px;">
-            </div>
-
-            <button type="submit" class="btn-submit">进入街景对比问卷</button>
-        </form>
+    <div class="intro">
+        <strong>研究说明</strong><br>
+        本问卷用于学术研究，旨在了解公众对成都、重庆街道空间环境的视觉感知。
+        正式部分共30组街景对比，每组包含8项判断，预计用时{{ estimated_time }}。
+        问卷不要求识别图片所在城市，请依据第一直观感受作答。
     </div>
+
+    <div class="device-note">
+        建议使用电脑或平板横屏完成。手机也可作答，但屏幕较小可能增加比较难度。
+    </div>
+
+    {% if error_message %}
+    <div class="error-box" role="alert">{{ error_message }}</div>
+    {% endif %}
+
+    <form id="profileForm" method="POST" novalidate>
+        <input type="hidden" name="profile_form_token" value="{{ profile_form_token }}">
+        <input type="hidden" id="deviceType" name="device_type">
+        <input type="hidden" id="browserName" name="browser_name">
+        <input type="hidden" id="operatingSystem" name="operating_system">
+        <input type="hidden" id="screenWidth" name="screen_width">
+        <input type="hidden" id="screenHeight" name="screen_height">
+        <input type="hidden" id="language" name="language">
+        <input type="hidden" id="timezone" name="timezone">
+
+        <div class="consent-box">
+            <h2>参与说明与知情同意</h2>
+            <p>
+                本研究匿名收集人口统计信息、街景成对比较结果及必要的作答时间记录，
+                数据仅用于学术研究与论文分析。研究不会向广告商或无关第三方提供个人回答。
+                参与完全自愿，您可以在提交完整问卷前随时退出；退出前已经产生的匿名原始记录
+                可能为系统故障排查而保留，但不会被作为完整有效问卷使用。
+            </p>
+            <label class="consent-label">
+                <input type="checkbox" name="consent" value="yes" required>
+                <span>我已阅读以上说明，理解研究用途，并自愿参加本研究。</span>
+            </label>
+        </div>
+
+        <div class="form-group">
+            <label for="gender">1. 您的性别是？</label>
+            <select id="gender" name="gender" required>
+                <option value="">-- 请选择 --</option>
+                <option value="male">男</option>
+                <option value="female">女</option>
+                <option value="other_prefer_not">其他 / 不便回答</option>
+            </select>
+        </div>
+
+        <div class="form-group">
+            <label for="ageGroup">2. 您的年龄段是？</label>
+            <select id="ageGroup" name="age_group" required>
+                <option value="">-- 请选择 --</option>
+                <option value="18_44">18—44岁</option>
+                <option value="45_59">45—59岁</option>
+                <option value="60plus">60岁及以上</option>
+            </select>
+        </div>
+
+        <div class="form-group">
+            <label for="residence">3. 您当前主要常住地是？</label>
+            <select id="residence" name="current_residence" required>
+                <option value="">-- 请选择 --</option>
+                <option value="chengdu">成都</option>
+                <option value="chongqing">重庆</option>
+                <option value="other">其他城市</option>
+            </select>
+        </div>
+
+        <div class="form-group">
+            <label for="cdFamiliarity">4. 您对成都街道环境的熟悉程度是？</label>
+            <select id="cdFamiliarity" name="chengdu_familiarity" required>
+                <option value="">-- 请选择 --</option>
+                <option value="1">完全不熟悉</option><option value="2">较不熟悉</option>
+                <option value="3">一般</option><option value="4">较熟悉</option>
+                <option value="5">非常熟悉</option>
+            </select>
+        </div>
+
+        <div class="form-group">
+            <label for="cqFamiliarity">5. 您对重庆街道环境的熟悉程度是？</label>
+            <select id="cqFamiliarity" name="chongqing_familiarity" required>
+                <option value="">-- 请选择 --</option>
+                <option value="1">完全不熟悉</option><option value="2">较不熟悉</option>
+                <option value="3">一般</option><option value="4">较熟悉</option>
+                <option value="5">非常熟悉</option>
+            </select>
+        </div>
+
+        <div class="form-group">
+            <label for="background">6. 您是否具有规划、建筑、景观、交通、地理等相关专业背景？</label>
+            <select id="background" name="professional_background" required>
+                <option value="">-- 请选择 --</option>
+                <option value="related">相关专业背景</option>
+                <option value="unrelated">非相关专业背景</option>
+            </select>
+        </div>
+
+        <div class="form-group">
+            <label>7. 您日常主要出行方式是？（可多选，至少一项）</label>
+            <div class="checkbox-group" id="travelModes">
+                <label><input type="checkbox" name="travel_walk">步行</label>
+                <label><input type="checkbox" name="travel_bike_ebike">骑行 / 电动车</label>
+                <label><input type="checkbox" name="travel_public_transit">公交 / 地铁</label>
+                <label><input type="checkbox" name="travel_private_car">私家车</label>
+                <label><input type="checkbox" name="travel_taxi_ridehailing">网约车 / 出租车</label>
+                <label><input type="checkbox" id="travelOther" name="travel_other">其他</label>
+            </div>
+            <input type="text" id="travelOtherText" name="travel_other_text"
+                   placeholder="选择“其他”后，请在此补充说明" style="margin-top:10px;">
+        </div>
+
+        <button id="profileSubmitButton" type="submit" class="btn-submit">
+            进入街景对比问卷
+        </button>
+        <p class="small">请勿在进入问卷后同时打开多个窗口作答。</p>
+    </form>
+</div>
+
+<script>
+(function () {
+    const form = document.getElementById("profileForm");
+    const submitButton = document.getElementById("profileSubmitButton");
+    const otherCheckbox = document.getElementById("travelOther");
+    const otherText = document.getElementById("travelOtherText");
+    let submitting = false;
+
+    const ua = navigator.userAgent || "";
+    document.getElementById("deviceType").value = /Mobi|Android/i.test(ua) ? "mobile" : "desktop_or_tablet";
+    document.getElementById("browserName").value = navigator.userAgentData?.brands?.map(x => x.brand).join(", ") || ua.slice(0, 100);
+    document.getElementById("operatingSystem").value = navigator.userAgentData?.platform || navigator.platform || "";
+    document.getElementById("screenWidth").value = window.screen.width || "";
+    document.getElementById("screenHeight").value = window.screen.height || "";
+    document.getElementById("language").value = navigator.language || "";
+    document.getElementById("timezone").value = Intl.DateTimeFormat().resolvedOptions().timeZone || "";
+
+    function updateOtherRequirement() {
+        otherText.required = otherCheckbox.checked;
+        if (!otherCheckbox.checked) otherText.value = "";
+    }
+    otherCheckbox.addEventListener("change", updateOtherRequirement);
+    updateOtherRequirement();
+
+    form.addEventListener("submit", function (event) {
+        if (submitting) {
+            event.preventDefault();
+            return;
+        }
+        const travelChecked = form.querySelectorAll('#travelModes input[type="checkbox"]:checked').length;
+        if (travelChecked === 0) {
+            event.preventDefault();
+            alert("请至少选择一种日常出行方式。");
+            return;
+        }
+        if (!form.checkValidity()) {
+            event.preventDefault();
+            form.reportValidity();
+            return;
+        }
+        submitting = true;
+        submitButton.disabled = true;
+        submitButton.textContent = "正在进入问卷，请勿重复点击……";
+    });
+})();
+</script>
 </body>
 </html>

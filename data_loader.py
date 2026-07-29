@@ -1,67 +1,136 @@
+"""Legacy/local helper for reading the fixed 250×30 assignment file.
+
+The production Flask application reads assignments from PostgreSQL. This module
+is retained for diagnostics and local inspection only; it must never reshuffle
+or regenerate pairs at runtime.
+"""
+
+from __future__ import annotations
+
+from functools import lru_cache
+from pathlib import Path
+
 import pandas as pd
-import os
 
-# 1. 填入你的阿里云 OSS 基础访问域名（记得以 https:// 开头，末尾不要带斜杠 /）
-# 请把下面这个示例网址，改成你真实的 OSS 访问域名！
-OSS_BASE_URL = "https://streetview-images.oss-cn-hangzhou.aliyuncs.com"
+from config import (
+    ASSIGNMENT_TABLE_PATH,
+    EXPECTED_PAIR_COUNT,
+    EXPECTED_PAIRS_PER_ATTEMPT,
+    EXPECTED_SLOT_COUNT,
+    OSS_BASE_URL,
+)
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-ASSIGNMENT_PATH = os.path.join(BASE_DIR, 'tables', 'questionnaire_pair_assignment_150x30.xlsx')
+
+REQUIRED_COLUMNS = {
+    "pair_id",
+    "participant_slot",
+    "order_in_participant",
+    "left_qid",
+    "right_qid",
+    "left_image_id",
+    "right_image_id",
+    "left_image_filename",
+    "right_image_filename",
+    "left_image_relative_path",
+    "right_image_relative_path",
+}
+
+
+def _clean(value):
+    if pd.isna(value):
+        return ""
+    return str(value).strip()
+
+
+def _build_url(explicit_url, relative_path, filename):
+    explicit = _clean(explicit_url)
+    if explicit:
+        return explicit
+    path_value = _clean(relative_path) or _clean(filename)
+    if not path_value:
+        raise ValueError("固定配对行缺少图片路径和文件名")
+    path_value = path_value.replace("\\", "/").lstrip("/")
+    if path_value.startswith("images/"):
+        path_value = path_value[len("images/"):]
+    return f"{OSS_BASE_URL}/{path_value}"
+
+
+@lru_cache(maxsize=1)
+def load_assignment_table() -> pd.DataFrame:
+    path = Path(ASSIGNMENT_TABLE_PATH)
+    if not path.exists():
+        raise FileNotFoundError(f"未找到固定配对表：{path}")
+
+    if path.suffix.lower() in {".xlsx", ".xls"}:
+        frame = pd.read_excel(path)
+    else:
+        frame = pd.read_csv(path, encoding="utf-8-sig")
+    frame.columns = frame.columns.astype(str).str.strip()
+
+    missing = sorted(REQUIRED_COLUMNS - set(frame.columns))
+    if missing:
+        raise ValueError("固定配对表缺少字段：" + ", ".join(missing))
+    if len(frame) != EXPECTED_PAIR_COUNT:
+        raise ValueError(
+            f"固定配对表应为{EXPECTED_PAIR_COUNT}行，实际为{len(frame)}行"
+        )
+
+    counts = frame.groupby("participant_slot").size()
+    if len(counts) != EXPECTED_SLOT_COUNT:
+        raise ValueError(
+            f"固定配对表应有{EXPECTED_SLOT_COUNT}个槽位，实际为{len(counts)}个"
+        )
+    if not (counts == EXPECTED_PAIRS_PER_ATTEMPT).all():
+        raise ValueError("固定配对表存在不是30组题的槽位")
+
+    frame["participant_slot"] = frame["participant_slot"].astype(str).str.strip()
+    frame["order_in_participant"] = pd.to_numeric(
+        frame["order_in_participant"], errors="raise"
+    ).astype(int)
+    return frame
+
+
+def normalize_slot(slot_id):
+    text_value = str(slot_id).strip().upper()
+    if text_value.startswith("P_SLOT_"):
+        return text_value
+    try:
+        number = int(text_value)
+    except ValueError as exc:
+        raise ValueError(f"无效槽位：{slot_id}") from exc
+    return f"P_SLOT_{number:03d}"
+
 
 def get_survey_questions(slot_id):
-    print(f"【DEBUG】当前系统正在物理寻找的文件路径是:\n{ASSIGNMENT_PATH}")
-    
-    if not os.path.exists(ASSIGNMENT_PATH):
-        print(f"【错误】在上述路径下未找到该 Excel 表，请确保文件已放入 tables 文件夹中。")
-        return []
+    target = normalize_slot(slot_id)
+    frame = load_assignment_table()
+    subset = frame[frame["participant_slot"] == target].copy()
+    if subset.empty:
+        raise KeyError(f"固定配对表中不存在槽位：{target}")
+    subset = subset.sort_values("order_in_participant")
+    if len(subset) != EXPECTED_PAIRS_PER_ATTEMPT:
+        raise ValueError(f"槽位{target}不是30组题")
 
-    try:
-        df = pd.read_excel(ASSIGNMENT_PATH)
-        df.columns = df.columns.str.strip()
-        
-        val = int(str(slot_id).strip())
-        target = f"P_SLOT_{val:03d}"
-        
-        print(f"【DEBUG】正在从表格中筛选槽位: '{target}' 的题目...")
-        
-        user_data = df[df['participant_slot'].astype(str).str.strip() == target]
-        
-        if user_data.empty:
-            print(f"【警告】在表格中未找到槽位 '{target}' 的任何数据")
-            return []
-
-        if 'order_in_participant' in user_data.columns:
-            user_data = user_data.sort_values(by='order_in_participant')
-
-        questions = []
-        for idx, (_, row) in enumerate(user_data.iterrows(), start=1):
-            # 清理文件名逻辑
-            left_f = str(row.get('left_image_filename', '')).strip()
-            right_f = str(row.get('right_image_filename', '')).strip()
-            
-            # 如果表格里的名字自带了 "images/"，我们先把它去掉，防止后面拼重了
-            left_f = left_f.replace("images/", "")
-            right_f = right_f.replace("images/", "")
-            
-            # 核心改动：不再走服务器本地 static，直接拼接成 OSS 上的绝对网络图片地址
-            # 假设你在 OSS 上的结构是把图片放在了一个名为 images 的文件夹里
-            left_url = f"{OSS_BASE_URL}/{left_f}"
-            right_url = f"{OSS_BASE_URL}/{right_f}"
-            
-            questions.append({
-                'order': idx,
-                'pair_id': str(row.get('pair_id', '')),
-                'left_qid': str(row.get('left_qid', '')),
-                'right_qid': str(row.get('right_qid', '')),
-                'left_image_id': str(row.get('left_image_id', '')),
-                'right_image_id': str(row.get('right_image_id', '')),
-                'left_img_url': left_url,
-                'right_img_url': right_url
-            })
-            
-        print(f"【DEBUG】成功为槽位 {target} 载入 {len(questions)} 道题。图片全部指向 OSS 云存储。")
-        return questions
-
-    except Exception as e:
-        print(f"【错误】data_loader 读取异常: {e}")
-        return []
+    questions = []
+    for row in subset.to_dict("records"):
+        questions.append(
+            {
+                "order": int(row["order_in_participant"]),
+                "pair_id": _clean(row["pair_id"]),
+                "left_qid": _clean(row["left_qid"]),
+                "right_qid": _clean(row["right_qid"]),
+                "left_image_id": _clean(row["left_image_id"]),
+                "right_image_id": _clean(row["right_image_id"]),
+                "left_img_url": _build_url(
+                    row.get("left_oss_url"),
+                    row.get("left_image_relative_path"),
+                    row.get("left_image_filename"),
+                ),
+                "right_img_url": _build_url(
+                    row.get("right_oss_url"),
+                    row.get("right_image_relative_path"),
+                    row.get("right_image_filename"),
+                ),
+            }
+        )
+    return questions
