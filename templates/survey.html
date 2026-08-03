@@ -34,6 +34,10 @@
         .submit-btn:disabled { background:#a8a8a8; box-shadow:none; cursor:not-allowed; }
         .error-row { background:#fff2f2 !important; }
         .global-message { display:none; background:#fff3cd; border:1px solid #ffe69c; color:#664d03; padding:12px 16px; border-radius:8px; }
+        .distributor-group { display:none; background:#fff; border:1px solid #d8d8dc; border-radius:10px; padding:14px 16px; margin-top:14px; }
+        .distributor-group label { display:block; font-weight:700; margin-bottom:8px; }
+        .distributor-group select { width:100%; max-width:360px; padding:10px 12px; border:1px solid #c9c9cf; border-radius:7px; background:#fff; font-size:15px; }
+        .distributor-note { color:#666; font-size:13px; margin-top:7px; }
         .modal-backdrop { position:fixed; inset:0; background:rgba(0,0,0,.48); display:flex; align-items:center; justify-content:center; z-index:1000; padding:16px; }
         .modal { max-width:850px; max-height:92vh; overflow:auto; background:#fff; border-radius:14px; padding:24px; box-shadow:0 12px 40px rgba(0,0,0,.25); }
         .definition-grid { display:grid; grid-template-columns:1fr 1fr; gap:9px 20px; margin:15px 0; }
@@ -58,12 +62,12 @@
 <div class="modal-backdrop" id="introModal" role="dialog" aria-modal="true" aria-labelledby="introTitle">
     <div class="modal">
         <h2 id="introTitle">正式答题说明</h2>
-        <p>每组将显示两张街景图片，请分别对8项感知进行比较。</p>
+        <p>每组将显示两张街景图片，请分别对9项感知进行比较。</p>
         <ul>
             <li>“左侧A更符合”：左图在该项特征上更明显。</li>
             <li>“两者差不多”：两张图片在该项感受上接近，不是跳过回答。</li>
             <li>“右侧B更符合”：右图在该项特征上更明显。</li>
-            <li>不同项目含义和方向不同，请逐项阅读；所有8项完成后才能进入下一组。</li>
+            <li>不同项目含义和方向不同，请逐项阅读；所有9项完成后才能进入下一组。</li>
         </ul>
         <div class="definition-grid">
             {% for dimension in survey_dimensions %}
@@ -116,6 +120,18 @@
             </thead>
             <tbody id="tableBody"></tbody>
         </table>
+        <div id="distributorGroup" class="distributor-group">
+            <label for="distributorNo">问卷发放人编号</label>
+            <select id="distributorNo" name="distributor_no">
+                <option value="">-- 请选择 --</option>
+                <option value="1">1</option>
+                <option value="2">2</option>
+                <option value="3">3</option>
+                <option value="4">4</option>
+                <option value="5">5</option>
+            </select>
+            <div class="distributor-note">请根据实际发放本问卷的工作人员编号进行选择。</div>
+        </div>
         <div class="submit-row">
             <div class="answered-count" id="answeredCount">已回答 0 / {{ expected_dimension_count }}</div>
             <button id="submitButton" type="submit" class="submit-btn" disabled>请先阅读答题说明</button>
@@ -142,6 +158,8 @@
     const rightStatus = document.getElementById("rightStatus");
     const globalMessage = document.getElementById("globalMessage");
     const answeredCount = document.getElementById("answeredCount");
+    const distributorGroup = document.getElementById("distributorGroup");
+    const distributorNo = document.getElementById("distributorNo");
 
     function showMessage(message) {
         globalMessage.textContent = message;
@@ -200,8 +218,16 @@
             submitButton.textContent = `还需完成 ${expectedDimensionCount - count} 项`;
             return;
         }
+        const isFinalQuestion = currentQuestion && currentQuestion.order === 30;
+        if (isFinalQuestion && !distributorNo.value) {
+            submitButton.disabled = true;
+            submitButton.textContent = "请选择问卷发放人编号";
+            return;
+        }
         submitButton.disabled = false;
-        submitButton.textContent = "提交本组比对，进入下一题";
+        submitButton.textContent = isFinalQuestion
+            ? "提交本组并完成问卷"
+            : "提交本组比对，进入下一题";
     }
     function markImageLoaded(side) {
         if (side === "left") {
@@ -245,6 +271,7 @@
         leftStatus.textContent = "正在加载左图……";
         rightStatus.textContent = "正在加载右图……";
         document.getElementById("surveyForm").reset();
+        distributorGroup.style.display = "none";
         dimensions.forEach(key => document.getElementById(`row_${key}`).classList.remove("error-row"));
         answeredCount.textContent = `已回答 0 / ${expectedDimensionCount}`;
         setRadiosDisabled(true);
@@ -267,6 +294,7 @@
             const percent = (displayIndex / data.total_questions) * 100;
             document.getElementById("progressBar").style.width = `${percent}%`;
             document.getElementById("progressText").textContent = `${displayIndex} / ${data.total_questions}`;
+            distributorGroup.style.display = currentQuestion.order === data.total_questions ? "block" : "none";
             leftImage.src = currentQuestion.left_img_url;
             rightImage.src = currentQuestion.right_img_url;
         } catch (error) {
@@ -301,8 +329,13 @@
         }
         const result = collectChoices();
         if (result.missing.length > 0) {
-            showMessage("请完成全部8个评价项目，未填写项目已标红。");
+            showMessage("请完成全部9个评价项目，未填写项目已标红。");
             updateAnsweredState();
+            return;
+        }
+        if (currentQuestion.order === 30 && !distributorNo.value) {
+            showMessage("完成问卷前，请选择问卷发放人编号。");
+            updateSubmitButton();
             return;
         }
         isSubmitting = true;
@@ -316,7 +349,8 @@
             left_image_loaded: leftImageLoaded,
             right_image_loaded: rightImageLoaded,
             both_images_loaded_at: bothImagesLoadedAt,
-            question_submit_time_client: new Date().toISOString()
+            question_submit_time_client: new Date().toISOString(),
+            distributor_no: currentQuestion.order === 30 ? distributorNo.value : null
         };
         try {
             const response = await fetch("/submit_response", {
@@ -344,6 +378,7 @@
     }
 
     document.getElementById("surveyForm").addEventListener("submit", submitTurn);
+    distributorNo.addEventListener("change", updateSubmitButton);
     document.getElementById("startButton").addEventListener("click", function () {
         introAcknowledged = true;
         document.getElementById("introModal").style.display = "none";

@@ -213,7 +213,6 @@ def validate_profile_form(form):
 
     allowed_values = {
         "gender": {"male", "female", "other_prefer_not"},
-        "age_group": {"18_44", "45_59", "60plus"},
         "current_residence": {"chengdu", "chongqing", "other"},
         "chengdu_familiarity": {"1", "2", "3", "4", "5"},
         "chongqing_familiarity": {"1", "2", "3", "4", "5"},
@@ -221,7 +220,6 @@ def validate_profile_form(form):
     }
     labels = {
         "gender": "性别",
-        "age_group": "年龄段",
         "current_residence": "常住地",
         "chengdu_familiarity": "成都熟悉度",
         "chongqing_familiarity": "重庆熟悉度",
@@ -231,6 +229,13 @@ def validate_profile_form(form):
         value = form.get(field)
         if value not in allowed:
             raise ValueError(f"请正确填写：{labels[field]}")
+
+    age_text = (form.get("age") or "").strip()
+    if not age_text.isascii() or not age_text.isdigit():
+        raise ValueError("年龄必须填写18—100之间的整数")
+    age = int(age_text)
+    if not 18 <= age <= 100:
+        raise ValueError("年龄必须填写18—100之间的整数")
 
     travel_fields = [
         "travel_walk",
@@ -245,7 +250,7 @@ def validate_profile_form(form):
     if form.get("travel_other") and not (form.get("travel_other_text") or "").strip():
         raise ValueError("选择“其他”出行方式后，请补充具体说明")
 
-    return submitted_token
+    return submitted_token, age
 
 
 def validate_choices(choices):
@@ -313,7 +318,7 @@ def index():
 
     submitted_token = None
     try:
-        submitted_token = validate_profile_form(request.form)
+        submitted_token, age = validate_profile_form(request.form)
         now = utcnow()
 
         slot = db.execute(
@@ -360,7 +365,7 @@ def index():
             consent_at=now,
             is_valid=False,
             gender=request.form.get("gender"),
-            age_group=request.form.get("age_group"),
+            age=age,
             current_residence=request.form.get("current_residence"),
             chengdu_familiarity=request.form.get("chengdu_familiarity"),
             chongqing_familiarity=request.form.get("chongqing_familiarity"),
@@ -564,6 +569,17 @@ def submit_response():
             raise ValueError("提交题序格式错误") from exc
         if submitted_order != expected_pair.order_in_participant:
             raise ValueError("提交题序与服务器当前进度不一致")
+
+        is_final_pair = expected_pair.order_in_participant == EXPECTED_PAIRS_PER_ATTEMPT
+        if is_final_pair:
+            distributor_text = str(payload.get("distributor_no", "")).strip()
+            if not distributor_text.isascii() or not distributor_text.isdigit():
+                raise ValueError("完成问卷前请选择问卷发放人编号")
+            distributor_no = int(distributor_text)
+            if distributor_no not in {1, 2, 3, 4, 5}:
+                raise ValueError("问卷发放人编号必须为1—5")
+            attempt.distributor_no = distributor_no
+
         if payload.get("left_image_loaded") is not True:
             raise ValueError("左侧图片未加载成功")
         if payload.get("right_image_loaded") is not True:
@@ -672,7 +688,12 @@ def submit_response():
             slot.active_attempt_id = None
             slot.completed_attempt_id = attempt.attempt_id
             slot.completed_at = now
-            add_event(db, attempt=attempt, event_type="survey_completed")
+            add_event(
+                db,
+                attempt=attempt,
+                event_type="survey_completed",
+                event_data={"distributor_no": attempt.distributor_no},
+            )
 
         db.commit()
         return jsonify(
@@ -918,8 +939,8 @@ def attempts_export_data(db):
         "attempt_number_for_slot", "completion_status", "started_at",
         "last_activity_at", "completed_at", "expired_at", "current_order",
         "answered_pair_count", "consent_given", "consent_version", "consent_at",
-        "is_valid", "invalid_reason", "admin_note", "gender", "age_group",
-        "current_residence", "chengdu_familiarity", "chongqing_familiarity",
+        "is_valid", "invalid_reason", "admin_note", "gender", "age",
+        "distributor_no", "current_residence", "chengdu_familiarity", "chongqing_familiarity",
         "professional_background", "travel_walk", "travel_bike_ebike",
         "travel_public_transit", "travel_private_car", "travel_taxi_ridehailing",
         "travel_other", "travel_other_text", "device_type", "browser_name",
@@ -1090,7 +1111,7 @@ def quality_export_data(db):
         if attempt.completion_status == "completed" and len(pair_times) != EXPECTED_PAIRS_PER_ATTEMPT:
             reasons.append("completed_but_pair_count_not_30")
         if len(responses) not in {0, EXPECTED_PAIRS_PER_ATTEMPT * EXPECTED_DIMENSION_COUNT} and attempt.completion_status == "completed":
-            reasons.append("completed_but_response_rows_not_240")
+            reasons.append("completed_but_response_rows_not_270")
         too_fast = sum(1 for value in times if value < 2.0)
         if too_fast >= 5:
             reasons.append("too_many_pairs_under_2_seconds")

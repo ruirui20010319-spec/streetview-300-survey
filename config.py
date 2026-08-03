@@ -40,13 +40,13 @@ IMAGE_METADATA_TABLE_PATH = TABLE_DIR / "questionnaire_sample_500_platform_metad
 IMAGE_DETAIL_TABLE_PATH = TABLE_DIR / "questionnaire_sample_500_final_for_survey_id_fixed.xlsx"
 
 SURVEY_VERSION = os.environ.get(
-    "SURVEY_VERSION", "survey_500img_v1"
+    "SURVEY_VERSION", "survey_500img_9dim_v1"
 ).strip()
 ASSIGNMENT_VERSION = os.environ.get(
     "ASSIGNMENT_VERSION", "assignment_500img_250slot_v1"
 ).strip()
 DIMENSION_CONFIG_VERSION = os.environ.get(
-    "DIMENSION_CONFIG_VERSION", "dimensions_500img_fixed_order_v1"
+    "DIMENSION_CONFIG_VERSION", "dimensions_500img_fixed_order_9dim_v1"
 ).strip()
 CONSENT_VERSION = os.environ.get(
     "CONSENT_VERSION", "consent_2026_v1"
@@ -56,7 +56,7 @@ EXPECTED_IMAGE_COUNT = 500
 EXPECTED_PAIR_COUNT = 7500
 EXPECTED_SLOT_COUNT = 250
 EXPECTED_PAIRS_PER_ATTEMPT = 30
-EXPECTED_DIMENSION_COUNT = 8
+EXPECTED_DIMENSION_COUNT = 9
 
 # Minimum inactive duration before an administrator can release a slot without
 # explicitly checking the force-release box.
@@ -143,16 +143,25 @@ SURVEY_DIMENSIONS = [
         "score_direction": 1,
         "high_score_meaning": "越高表示活力感越强",
     },
+    {
+        "key": "overall_perception",
+        "label": "综合感知",
+        "description": "综合考虑上述各方面，哪一侧街景整体上给您的感受更好？",
+        "definition": "综合考虑上述各方面后，对街景整体感受与总体偏好的判断。",
+        "order": 9,
+        "score_direction": 1,
+        "high_score_meaning": "越高表示整体综合感受越好",
+    },
 ]
 
 if len(SURVEY_DIMENSIONS) != EXPECTED_DIMENSION_COUNT:
-    raise RuntimeError("SURVEY_DIMENSIONS 数量必须为8")
+    raise RuntimeError("SURVEY_DIMENSIONS 数量必须为9")
 
 _dimension_keys = [item["key"] for item in SURVEY_DIMENSIONS]
 _dimension_orders = [item["order"] for item in SURVEY_DIMENSIONS]
 if len(set(_dimension_keys)) != len(_dimension_keys):
     raise RuntimeError("SURVEY_DIMENSIONS 中存在重复 dimension key")
 if sorted(_dimension_orders) != list(range(1, EXPECTED_DIMENSION_COUNT + 1)):
-    raise RuntimeError("SURVEY_DIMENSIONS 的 order 必须为1—8且不重复")
+    raise RuntimeError("SURVEY_DIMENSIONS 的 order 必须为1—9且不重复")
 
 VALID_CHOICES = {"left", "right", "tie"}

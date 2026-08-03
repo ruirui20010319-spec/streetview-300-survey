@@ -78,7 +78,7 @@
     <div class="intro">
         <strong>研究说明</strong><br>
         本问卷用于学术研究，旨在了解公众对成都、重庆街道空间环境的视觉感知。
-        正式部分共30组街景对比，每组包含8项判断，预计用时{{ estimated_time }}。
+        正式部分共30组街景对比，每组包含9项判断，预计用时{{ estimated_time }}。
         问卷不要求识别图片所在城市，请依据第一直观感受作答。
     </div>
 
@@ -125,13 +125,18 @@
         </div>
 
         <div class="form-group">
-            <label for="ageGroup">2. 您的年龄段是？</label>
-            <select id="ageGroup" name="age_group" required>
-                <option value="">-- 请选择 --</option>
-                <option value="18_44">18—44岁</option>
-                <option value="45_59">45—59岁</option>
-                <option value="60plus">60岁及以上</option>
-            </select>
+            <label for="age">2. 您的年龄是？</label>
+            <input
+                id="age"
+                name="age"
+                type="number"
+                min="18"
+                max="100"
+                step="1"
+                inputmode="numeric"
+                placeholder="请输入18—100之间的整数"
+                required
+            >
         </div>
 
         <div class="form-group">

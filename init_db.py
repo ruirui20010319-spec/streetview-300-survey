@@ -482,6 +482,8 @@ def run_schema_migrations(db):
         "ALTER TABLE image_master ADD COLUMN IF NOT EXISTS point_id VARCHAR",
         "ALTER TABLE image_master ADD COLUMN IF NOT EXISTS road_segment_id VARCHAR",
         "ALTER TABLE survey_attempts ADD COLUMN IF NOT EXISTS profile_submission_token VARCHAR",
+        "ALTER TABLE survey_attempts ADD COLUMN IF NOT EXISTS age INTEGER",
+        "ALTER TABLE survey_attempts ADD COLUMN IF NOT EXISTS distributor_no INTEGER",
         "ALTER TABLE survey_attempts ADD COLUMN IF NOT EXISTS user_agent TEXT",
         "ALTER TABLE survey_attempts ADD COLUMN IF NOT EXISTS ip_hash VARCHAR",
         "ALTER TABLE survey_attempts ALTER COLUMN consent_given SET DEFAULT FALSE",
@@ -555,7 +557,7 @@ def initialize_database():
         pair_rows = build_pair_rows(pair_df)
         slots = sorted(pair_df["participant_slot"].unique().tolist())
 
-        print("3/8 写入并冻结8个评价指标……")
+        print("3/8 写入并冻结9个评价指标……")
         db.execute(
             update(SurveyConfig).where(
                 SurveyConfig.dimension_config_version != DIMENSION_CONFIG_VERSION
@@ -734,7 +736,7 @@ def initialize_database():
         if counts != expected:
             raise RuntimeError(f"初始化数量不符合预期：actual={counts}, expected={expected}")
 
-        print("\n✅ 500张、7500组配对、250槽位、8指标初始化验收通过。")
+        print("\n✅ 500张、7500组配对、250槽位、9指标初始化验收通过。")
         print("✅ 未删除旧表、旧attempt、旧response或旧assignment版本。")
 
     except Exception:

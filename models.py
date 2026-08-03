@@ -35,7 +35,7 @@ class SurveyConfig(Base):
     high_score_meaning = Column(Text, nullable=True)
     is_active = Column(Boolean, nullable=False, default=True)
     expected_pairs_per_attempt = Column(Integer, nullable=False, default=30)
-    expected_dimension_count = Column(Integer, nullable=False, default=8)
+    expected_dimension_count = Column(Integer, nullable=False, default=9)
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
     activated_at = Column(DateTime, nullable=True)
 
@@ -193,7 +193,8 @@ class SurveyAttempt(Base):
     admin_note = Column(Text, nullable=True)
 
     gender = Column(String, nullable=True)
-    age_group = Column(String, nullable=True)
+    age = Column(Integer, nullable=True)
+    distributor_no = Column(Integer, nullable=True)
     current_residence = Column(String, nullable=True)
     chengdu_familiarity = Column(String, nullable=True)
     chongqing_familiarity = Column(String, nullable=True)
