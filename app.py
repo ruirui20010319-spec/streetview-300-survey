@@ -8,6 +8,7 @@ import io
 import json
 import os
 import secrets
+import tempfile
 import uuid
 import zipfile
 from datetime import datetime, timedelta, timezone
@@ -22,6 +23,7 @@ from flask import (
     redirect,
     render_template,
     request,
+    send_file,
     session,
     url_for,
 )
@@ -913,6 +915,40 @@ def csv_response(filename, headers, rows):
     return response
 
 
+RESPONSE_EXPORT_HEADERS = [
+    "response_id", "pair_submission_id", "attempt_id", "participant_id",
+    "participant_slot", "session_id", "survey_version", "assignment_version",
+    "dimension_config_version", "pair_id", "order_in_participant",
+    "dimension_key", "dimension_order", "display_position", "left_qid",
+    "right_qid", "left_image_id", "right_image_id", "choice", "winner_qid",
+    "winner_image_id", "question_served_at", "left_image_loaded",
+    "right_image_loaded", "both_images_loaded_at", "question_submit_time_client",
+    "server_received_at", "server_saved_at", "response_time_sec",
+    "is_duplicate_retry", "response_status",
+]
+
+EVENT_LOG_EXPORT_HEADERS = [
+    "event_id", "attempt_id", "participant_id", "participant_slot",
+    "session_id", "pair_id", "order_in_participant", "event_type",
+    "client_time", "server_time", "event_data",
+]
+
+
+def write_csv_to_archive(archive, filename, headers, rows):
+    """Write one CSV member directly into a ZIP without building it in memory."""
+    with archive.open(filename, "w") as binary_file:
+        binary_file.write("\ufeff".encode("utf-8"))
+        with io.TextIOWrapper(
+            binary_file,
+            encoding="utf-8",
+            newline="",
+            write_through=True,
+        ) as text_file:
+            writer = csv.writer(text_file)
+            writer.writerow(headers)
+            writer.writerows(rows)
+
+
 def serialize_records(records, headers):
     return [[getattr(item, column) for column in headers] for item in records]
 
@@ -975,17 +1011,7 @@ def response_records(db, valid_only):
 
 
 def responses_export_data(db, valid_only):
-    headers = [
-        "response_id", "pair_submission_id", "attempt_id", "participant_id",
-        "participant_slot", "session_id", "survey_version", "assignment_version",
-        "dimension_config_version", "pair_id", "order_in_participant",
-        "dimension_key", "dimension_order", "display_position", "left_qid",
-        "right_qid", "left_image_id", "right_image_id", "choice", "winner_qid",
-        "winner_image_id", "question_served_at", "left_image_loaded",
-        "right_image_loaded", "both_images_loaded_at", "question_submit_time_client",
-        "server_received_at", "server_saved_at", "response_time_sec",
-        "is_duplicate_retry", "response_status",
-    ]
+    headers = RESPONSE_EXPORT_HEADERS
     rows = []
     for item in response_records(db, valid_only):
         winner_qid = item.left_qid if item.choice == "left" else item.right_qid if item.choice == "right" else None
@@ -997,6 +1023,58 @@ def responses_export_data(db, valid_only):
         }
         rows.append([values.get(column) for column in headers])
     return headers, rows
+
+
+def response_archive_rows(db, valid_only, *, batch_size=1000):
+    """Yield response rows in batches for the low-memory ZIP export."""
+    stmt = select(SurveyResponse).join(
+        SurveyAttempt, SurveyAttempt.attempt_id == SurveyResponse.attempt_id
+    ).where(SurveyResponse.assignment_version == ASSIGNMENT_VERSION)
+    if valid_only:
+        stmt = stmt.where(
+            SurveyAttempt.completion_status == "completed",
+            SurveyAttempt.is_valid.is_(True),
+            SurveyAttempt.answered_pair_count == EXPECTED_PAIRS_PER_ATTEMPT,
+        )
+    stmt = stmt.order_by(
+        SurveyResponse.participant_slot,
+        SurveyResponse.order_in_participant,
+        SurveyResponse.dimension_order,
+    ).execution_options(yield_per=batch_size)
+
+    for item in db.execute(stmt).scalars():
+        winner_qid = (
+            item.left_qid if item.choice == "left"
+            else item.right_qid if item.choice == "right"
+            else None
+        )
+        winner_image_id = (
+            item.left_image_id if item.choice == "left"
+            else item.right_image_id if item.choice == "right"
+            else None
+        )
+        values = {
+            **{
+                column: getattr(item, column)
+                for column in RESPONSE_EXPORT_HEADERS
+                if hasattr(item, column)
+            },
+            "winner_qid": winner_qid,
+            "winner_image_id": winner_image_id,
+        }
+        yield [values.get(column) for column in RESPONSE_EXPORT_HEADERS]
+
+
+def event_archive_rows(db, *, batch_size=1000):
+    """Yield event-log rows in batches for the low-memory ZIP export."""
+    current_attempt_ids = select(SurveyAttempt.attempt_id).where(
+        SurveyAttempt.assignment_version == ASSIGNMENT_VERSION
+    )
+    stmt = select(SurveyEventLog).where(
+        SurveyEventLog.attempt_id.in_(current_attempt_ids)
+    ).order_by(SurveyEventLog.event_id).execution_options(yield_per=batch_size)
+    for item in db.execute(stmt).scalars():
+        yield [getattr(item, column) for column in EVENT_LOG_EXPORT_HEADERS]
 
 
 def config_export_data(db):
@@ -1057,11 +1135,7 @@ def image_export_data(db):
 
 
 def event_export_data(db):
-    headers = [
-        "event_id", "attempt_id", "participant_id", "participant_slot",
-        "session_id", "pair_id", "order_in_participant", "event_type",
-        "client_time", "server_time", "event_data",
-    ]
+    headers = EVENT_LOG_EXPORT_HEADERS
     current_attempt_ids = select(SurveyAttempt.attempt_id).where(
         SurveyAttempt.assignment_version == ASSIGNMENT_VERSION
     )
@@ -1194,24 +1268,83 @@ def export_quality_report():
 @require_admin
 def export_archive():
     db = get_db()
-    datasets = {
-        "survey_slots.csv": slots_export_data(db),
-        "survey_attempts.csv": attempts_export_data(db),
-        "survey_responses_raw.csv": responses_export_data(db, False),
-        "survey_responses_valid.csv": responses_export_data(db, True),
-        "survey_config.csv": config_export_data(db),
-        "pair_assignments.csv": pair_export_data(db),
-        "image_master_500_final.csv": image_export_data(db),
-        "survey_event_logs.csv": event_export_data(db),
-        "survey_quality_report.csv": quality_export_data(db),
-    }
-    buffer = io.BytesIO()
-    with zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_DEFLATED) as archive:
-        for filename, (headers, rows) in datasets.items():
-            archive.writestr(filename, csv_bytes(headers, rows))
-    response = app.response_class(buffer.getvalue(), mimetype="application/zip")
-    response.headers["Content-Disposition"] = 'attachment; filename="survey_research_archive.zip"'
-    return response
+    temp_file = tempfile.NamedTemporaryFile(
+        prefix="survey_research_archive_",
+        suffix=".zip",
+        delete=False,
+    )
+    archive_path = temp_file.name
+    temp_file.close()
+
+    try:
+        with zipfile.ZipFile(
+            archive_path,
+            "w",
+            compression=zipfile.ZIP_DEFLATED,
+            compresslevel=1,
+            allowZip64=True,
+        ) as archive:
+            # Small/medium tables are materialized one at a time, never all together.
+            for filename, dataset_factory in (
+                ("survey_slots.csv", slots_export_data),
+                ("survey_attempts.csv", attempts_export_data),
+            ):
+                headers, rows = dataset_factory(db)
+                write_csv_to_archive(archive, filename, headers, rows)
+
+            # Large tables are streamed from PostgreSQL into the ZIP in batches.
+            write_csv_to_archive(
+                archive,
+                "survey_responses_raw.csv",
+                RESPONSE_EXPORT_HEADERS,
+                response_archive_rows(db, False),
+            )
+            write_csv_to_archive(
+                archive,
+                "survey_responses_valid.csv",
+                RESPONSE_EXPORT_HEADERS,
+                response_archive_rows(db, True),
+            )
+
+            for filename, dataset_factory in (
+                ("survey_config.csv", config_export_data),
+                ("pair_assignments.csv", pair_export_data),
+                ("image_master_500_final.csv", image_export_data),
+            ):
+                headers, rows = dataset_factory(db)
+                write_csv_to_archive(archive, filename, headers, rows)
+
+            write_csv_to_archive(
+                archive,
+                "survey_event_logs.csv",
+                EVENT_LOG_EXPORT_HEADERS,
+                event_archive_rows(db),
+            )
+
+            headers, rows = quality_export_data(db)
+            write_csv_to_archive(
+                archive,
+                "survey_quality_report.csv",
+                headers,
+                rows,
+            )
+
+        response = send_file(
+            archive_path,
+            mimetype="application/zip",
+            as_attachment=True,
+            download_name="survey_research_archive.zip",
+            conditional=False,
+            max_age=0,
+        )
+        response.headers["Cache-Control"] = "no-store, max-age=0"
+        response.call_on_close(lambda: os.remove(archive_path) if os.path.exists(archive_path) else None)
+        return response
+    except Exception:
+        if os.path.exists(archive_path):
+            os.remove(archive_path)
+        app.logger.exception("完整CSV归档ZIP导出失败")
+        return Response("完整归档生成失败，请稍后重试或先下载单项CSV。", 500)
 
 
 @app.route("/health")
