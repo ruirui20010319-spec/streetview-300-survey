@@ -8,7 +8,6 @@ import io
 import json
 import os
 import secrets
-import tempfile
 import uuid
 import zipfile
 from datetime import datetime, timedelta, timezone
@@ -23,7 +22,6 @@ from flask import (
     redirect,
     render_template,
     request,
-    send_file,
     session,
     url_for,
 )
@@ -933,9 +931,52 @@ EVENT_LOG_EXPORT_HEADERS = [
     "client_time", "server_time", "event_data",
 ]
 
+QUALITY_EXPORT_HEADERS = [
+    "attempt_id", "participant_id", "participant_slot", "completion_status",
+    "answered_pair_count", "response_row_count", "unique_pair_count",
+    "median_pair_time_sec", "total_duration_sec", "left_rate", "right_rate",
+    "tie_rate", "too_fast_pair_count_lt2s", "late_stage_median_time_sec",
+    "quality_flag", "quality_reason",
+]
 
-def write_csv_to_archive(archive, filename, headers, rows):
-    """Write one CSV member directly into a ZIP without building it in memory."""
+
+class StreamingZipBuffer:
+    """Minimal non-seekable sink that exposes ZIP bytes as they are produced."""
+
+    def __init__(self):
+        self._chunks = []
+        self._position = 0
+
+    def write(self, data):
+        payload = bytes(data)
+        if payload:
+            self._chunks.append(payload)
+            self._position += len(payload)
+        return len(data)
+
+    def tell(self):
+        return self._position
+
+    def flush(self):
+        return None
+
+    def seekable(self):
+        return False
+
+    def drain(self):
+        chunks = self._chunks
+        self._chunks = []
+        if not chunks:
+            return ()
+        if len(chunks) == 1:
+            return (chunks[0],)
+        return (b"".join(chunks),)
+
+
+def stream_csv_to_archive(
+    archive, sink, filename, headers, rows, *, flush_every=256
+):
+    """Yield ZIP bytes while writing one CSV member row by row."""
     with archive.open(filename, "w") as binary_file:
         binary_file.write("\ufeff".encode("utf-8"))
         with io.TextIOWrapper(
@@ -946,7 +987,12 @@ def write_csv_to_archive(archive, filename, headers, rows):
         ) as text_file:
             writer = csv.writer(text_file)
             writer.writerow(headers)
-            writer.writerows(rows)
+            yield from sink.drain()
+            for row_number, row in enumerate(rows, start=1):
+                writer.writerow(row)
+                if row_number % flush_every == 0:
+                    yield from sink.drain()
+    yield from sink.drain()
 
 
 def serialize_records(records, headers):
@@ -1147,20 +1193,13 @@ def event_export_data(db):
     return headers, serialize_records(records, headers)
 
 
-def quality_export_data(db):
-    headers = [
-        "attempt_id", "participant_id", "participant_slot", "completion_status",
-        "answered_pair_count", "response_row_count", "unique_pair_count",
-        "median_pair_time_sec", "total_duration_sec", "left_rate", "right_rate",
-        "tie_rate", "too_fast_pair_count_lt2s", "late_stage_median_time_sec",
-        "quality_flag", "quality_reason",
-    ]
+def quality_archive_rows(db):
+    """Yield one quality-report row per attempt without retaining the full report."""
     attempts = db.execute(
         select(SurveyAttempt).where(
             SurveyAttempt.assignment_version == ASSIGNMENT_VERSION
         ).order_by(SurveyAttempt.started_at)
     ).scalars().all()
-    rows = []
     for attempt in attempts:
         responses = db.execute(
             select(SurveyResponse).where(
@@ -1189,7 +1228,7 @@ def quality_export_data(db):
         too_fast = sum(1 for value in times if value < 2.0)
         if too_fast >= 5:
             reasons.append("too_many_pairs_under_2_seconds")
-        rows.append([
+        yield [
             attempt.attempt_id,
             attempt.participant_id,
             attempt.participant_slot,
@@ -1206,8 +1245,11 @@ def quality_export_data(db):
             median(late_times) if late_times else None,
             "review" if reasons else "structurally_ok",
             ";".join(reasons),
-        ])
-    return headers, rows
+        ]
+
+
+def quality_export_data(db):
+    return QUALITY_EXPORT_HEADERS, list(quality_archive_rows(db))
 
 
 @app.route("/admin/export/slots")
@@ -1267,84 +1309,83 @@ def export_quality_report():
 @app.route("/admin/export/archive")
 @require_admin
 def export_archive():
-    db = get_db()
-    temp_file = tempfile.NamedTemporaryFile(
-        prefix="survey_research_archive_",
-        suffix=".zip",
-        delete=False,
+    def generate_archive():
+        # The request-scoped session closes before a streaming response finishes,
+        # so the generator owns a dedicated read-only session for its full life.
+        db = SessionLocal()
+        sink = StreamingZipBuffer()
+        try:
+            # ZIP_STORED avoids CPU-heavy compression and emits bytes immediately.
+            with zipfile.ZipFile(
+                sink,
+                "w",
+                compression=zipfile.ZIP_STORED,
+                allowZip64=True,
+            ) as archive:
+                for filename, dataset_factory in (
+                    ("survey_slots.csv", slots_export_data),
+                    ("survey_attempts.csv", attempts_export_data),
+                ):
+                    headers, rows = dataset_factory(db)
+                    yield from stream_csv_to_archive(
+                        archive, sink, filename, headers, rows
+                    )
+
+                yield from stream_csv_to_archive(
+                    archive,
+                    sink,
+                    "survey_responses_raw.csv",
+                    RESPONSE_EXPORT_HEADERS,
+                    response_archive_rows(db, False),
+                )
+                yield from stream_csv_to_archive(
+                    archive,
+                    sink,
+                    "survey_responses_valid.csv",
+                    RESPONSE_EXPORT_HEADERS,
+                    response_archive_rows(db, True),
+                )
+
+                for filename, dataset_factory in (
+                    ("survey_config.csv", config_export_data),
+                    ("pair_assignments.csv", pair_export_data),
+                    ("image_master_500_final.csv", image_export_data),
+                ):
+                    headers, rows = dataset_factory(db)
+                    yield from stream_csv_to_archive(
+                        archive, sink, filename, headers, rows
+                    )
+
+                yield from stream_csv_to_archive(
+                    archive,
+                    sink,
+                    "survey_event_logs.csv",
+                    EVENT_LOG_EXPORT_HEADERS,
+                    event_archive_rows(db),
+                )
+                yield from stream_csv_to_archive(
+                    archive,
+                    sink,
+                    "survey_quality_report.csv",
+                    QUALITY_EXPORT_HEADERS,
+                    quality_archive_rows(db),
+                )
+            yield from sink.drain()
+        except GeneratorExit:
+            raise
+        except Exception:
+            app.logger.exception("完整CSV归档ZIP流式导出失败")
+            raise
+        finally:
+            db.close()
+
+    response = Response(generate_archive(), mimetype="application/zip")
+    response.headers["Content-Disposition"] = (
+        'attachment; filename="survey_research_archive.zip"'
     )
-    archive_path = temp_file.name
-    temp_file.close()
-
-    try:
-        with zipfile.ZipFile(
-            archive_path,
-            "w",
-            compression=zipfile.ZIP_DEFLATED,
-            compresslevel=1,
-            allowZip64=True,
-        ) as archive:
-            # Small/medium tables are materialized one at a time, never all together.
-            for filename, dataset_factory in (
-                ("survey_slots.csv", slots_export_data),
-                ("survey_attempts.csv", attempts_export_data),
-            ):
-                headers, rows = dataset_factory(db)
-                write_csv_to_archive(archive, filename, headers, rows)
-
-            # Large tables are streamed from PostgreSQL into the ZIP in batches.
-            write_csv_to_archive(
-                archive,
-                "survey_responses_raw.csv",
-                RESPONSE_EXPORT_HEADERS,
-                response_archive_rows(db, False),
-            )
-            write_csv_to_archive(
-                archive,
-                "survey_responses_valid.csv",
-                RESPONSE_EXPORT_HEADERS,
-                response_archive_rows(db, True),
-            )
-
-            for filename, dataset_factory in (
-                ("survey_config.csv", config_export_data),
-                ("pair_assignments.csv", pair_export_data),
-                ("image_master_500_final.csv", image_export_data),
-            ):
-                headers, rows = dataset_factory(db)
-                write_csv_to_archive(archive, filename, headers, rows)
-
-            write_csv_to_archive(
-                archive,
-                "survey_event_logs.csv",
-                EVENT_LOG_EXPORT_HEADERS,
-                event_archive_rows(db),
-            )
-
-            headers, rows = quality_export_data(db)
-            write_csv_to_archive(
-                archive,
-                "survey_quality_report.csv",
-                headers,
-                rows,
-            )
-
-        response = send_file(
-            archive_path,
-            mimetype="application/zip",
-            as_attachment=True,
-            download_name="survey_research_archive.zip",
-            conditional=False,
-            max_age=0,
-        )
-        response.headers["Cache-Control"] = "no-store, max-age=0"
-        response.call_on_close(lambda: os.remove(archive_path) if os.path.exists(archive_path) else None)
-        return response
-    except Exception:
-        if os.path.exists(archive_path):
-            os.remove(archive_path)
-        app.logger.exception("完整CSV归档ZIP导出失败")
-        return Response("完整归档生成失败，请稍后重试或先下载单项CSV。", 500)
+    response.headers["Cache-Control"] = "no-store, max-age=0"
+    response.headers["X-Accel-Buffering"] = "no"
+    return response
 
 
 @app.route("/health")
