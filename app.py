@@ -12,6 +12,7 @@ import uuid
 import zipfile
 from datetime import datetime, timedelta, timezone
 from functools import wraps
+from html import escape
 from statistics import median
 
 from flask import (
@@ -108,6 +109,39 @@ app.config.update(
     PERMANENT_SESSION_LIFETIME=timedelta(days=7),
     MAX_CONTENT_LENGTH=256 * 1024,
 )
+
+
+# Quality-review batch confirmed from the 2026-09-01 research archive.
+# The attempt IDs are intentionally included so the convenience selector can
+# never target a later replacement attempt that happens to reuse the same slot.
+QUALITY_REVIEW_BATCH_0901 = {
+    "P_SLOT_008": "2667e8b7-7b60-4b65-a99d-83fda94da2e8",
+    "P_SLOT_023": "6b6f998b-77f1-44d6-b56a-b045c25565a2",
+    "P_SLOT_030": "02e7b133-0955-49d9-95a9-2a0d269df630",
+    "P_SLOT_058": "8840dc91-c453-4555-abc7-7a1991eec6db",
+    "P_SLOT_065": "4005b607-3f8c-4650-9ebf-51129ad84bb9",
+    "P_SLOT_079": "450f7db8-54f3-4608-8ea9-2c6b4207cd33",
+    "P_SLOT_088": "e4c7c0b9-307b-4bf2-9d1d-955890f6819c",
+    "P_SLOT_093": "eecf6ae2-b59f-4aa0-b2fd-21cbe8266ec8",
+    "P_SLOT_095": "bcbee878-39b1-4944-9853-7bb39e99e764",
+    "P_SLOT_100": "92453b34-1e45-497b-b28c-7de904d24efd",
+    "P_SLOT_105": "53a360ed-fd93-43b8-8019-6ca12bd561fc",
+    "P_SLOT_106": "44acbb21-9292-4fb2-8db5-aa1a844d35cd",
+    "P_SLOT_111": "55d36a8d-b2bb-41c7-812e-5e13fee9e7c3",
+    "P_SLOT_117": "e06e5048-6010-45c5-b28b-67c0862fb0c3",
+    "P_SLOT_146": "b5c155fd-4d81-4ffb-ad47-279daa31ab87",
+    "P_SLOT_148": "5403900e-d926-4109-83c1-bfe6b9d419d3",
+    "P_SLOT_151": "a37b462a-6113-4a22-9da1-cfec6d72cc7c",
+    "P_SLOT_155": "62108753-2d72-43c0-b207-d25b32379b92",
+    "P_SLOT_158": "8d60a5a4-8c4d-4390-ad2c-b4a1471e9b57",
+    "P_SLOT_162": "7461281d-1cc9-47e1-be80-f3852090ba75",
+    "P_SLOT_163": "e3f5c1dd-22cd-4141-87a3-9090f18c09a8",
+    "P_SLOT_168": "e5dd729e-b1c3-4c5c-9ea5-e139d5bcc74c",
+    "P_SLOT_170": "d852ab88-3b53-4c01-b323-4b7f36b011b2",
+    "P_SLOT_178": "6f3c56b9-a996-4157-8017-72d7ecc02343",
+    "P_SLOT_186": "c6cae1a1-582b-4072-ae12-63a698030fa4",
+    "P_SLOT_207": "8af435ba-410d-4817-8a95-a9bd99343e46",
+}
 
 
 @app.before_request
@@ -746,6 +780,93 @@ def admin_csrf_token():
     return token
 
 
+def validate_admin_csrf():
+    supplied_token = request.form.get("admin_csrf_token", "")
+    expected_token = session.get("admin_csrf_token", "")
+    if not supplied_token or not secrets.compare_digest(supplied_token, expected_token):
+        raise ValueError("管理员表单令牌无效，请返回后台刷新后重试")
+
+
+def parse_attempt_refs(raw_refs):
+    """Parse unique ``participant_slot|attempt_id`` admin selections."""
+    refs = []
+    seen = set()
+    for raw_ref in raw_refs:
+        participant_slot, separator, attempt_id = str(raw_ref).partition("|")
+        participant_slot = participant_slot.strip().upper()
+        attempt_id = attempt_id.strip()
+        if not separator or not participant_slot or not attempt_id:
+            raise ValueError("作废项目格式错误，请返回后台重新勾选")
+        key = (participant_slot, attempt_id)
+        if key in seen:
+            continue
+        seen.add(key)
+        refs.append(key)
+    if not refs:
+        raise ValueError("请至少勾选一份已完成问卷")
+    if len(refs) > 100:
+        raise ValueError("单次最多处理100份问卷")
+    return refs
+
+
+def load_completed_attempt_refs(db, refs, *, for_update=False):
+    """Resolve and validate a batch without allowing slot/attempt drift."""
+    participant_slots = sorted({participant_slot for participant_slot, _ in refs})
+    attempt_ids = sorted({attempt_id for _, attempt_id in refs})
+
+    slot_stmt = (
+        select(SurveySlot)
+        .where(
+            SurveySlot.assignment_version == ASSIGNMENT_VERSION,
+            SurveySlot.participant_slot.in_(participant_slots),
+        )
+        .order_by(SurveySlot.participant_slot)
+    )
+    attempt_stmt = (
+        select(SurveyAttempt)
+        .where(
+            SurveyAttempt.assignment_version == ASSIGNMENT_VERSION,
+            SurveyAttempt.attempt_id.in_(attempt_ids),
+        )
+        .order_by(SurveyAttempt.attempt_id)
+    )
+    if for_update:
+        slot_stmt = slot_stmt.with_for_update()
+        attempt_stmt = attempt_stmt.with_for_update()
+
+    slots_by_name = {
+        item.participant_slot: item for item in db.execute(slot_stmt).scalars().all()
+    }
+    attempts_by_id = {
+        item.attempt_id: item for item in db.execute(attempt_stmt).scalars().all()
+    }
+
+    resolved = []
+    for participant_slot, attempt_id in refs:
+        slot = slots_by_name.get(participant_slot)
+        attempt = attempts_by_id.get(attempt_id)
+        if slot is None:
+            raise ValueError(f"未找到槽位：{participant_slot}")
+        if attempt is None:
+            raise ValueError(f"未找到attempt：{attempt_id}")
+        if slot.slot_status != "completed":
+            raise ValueError(f"{participant_slot}当前不是已完成状态，整批操作已取消")
+        if slot.active_attempt_id:
+            raise ValueError(f"{participant_slot}存在进行中attempt，整批操作已取消")
+        if slot.completed_attempt_id != attempt_id:
+            raise ValueError(
+                f"{participant_slot}当前完成attempt已变化，整批操作已取消"
+            )
+        if attempt.participant_slot != participant_slot:
+            raise ValueError(f"{participant_slot}与attempt不匹配，整批操作已取消")
+        if attempt.completion_status != "completed":
+            raise ValueError(f"{participant_slot}对应attempt不是completed，整批操作已取消")
+        if attempt.is_valid is not True:
+            raise ValueError(f"{participant_slot}已被作废或无效，整批操作已取消")
+        resolved.append((slot, attempt))
+    return resolved
+
+
 @app.route("/admin")
 @require_admin
 def admin_dashboard():
@@ -776,11 +897,58 @@ def admin_dashboard():
         .order_by(SurveySlot.last_activity_at.asc())
     ).scalars().all()
 
+    completed_valid = db.execute(
+        select(SurveySlot, SurveyAttempt)
+        .join(
+            SurveyAttempt,
+            SurveyAttempt.attempt_id == SurveySlot.completed_attempt_id,
+        )
+        .where(
+            SurveySlot.assignment_version == ASSIGNMENT_VERSION,
+            SurveySlot.slot_status == "completed",
+            SurveyAttempt.assignment_version == ASSIGNMENT_VERSION,
+            SurveyAttempt.completion_status == "completed",
+            SurveyAttempt.is_valid.is_(True),
+        )
+        .order_by(SurveySlot.participant_slot)
+    ).all()
+
     rows = "".join(
-        f"<tr><td>{slot.participant_slot}</td><td>{slot.active_attempt_id or ''}</td>"
-        f"<td>{slot.last_activity_at or ''}</td><td>{slot.release_count}</td></tr>"
+        f"<tr><td>{escape(slot.participant_slot)}</td>"
+        f"<td>{escape(slot.active_attempt_id or '')}</td>"
+        f"<td>{escape(str(slot.last_activity_at or ''))}</td>"
+        f"<td>{slot.release_count}</td></tr>"
         for slot in in_progress
     ) or "<tr><td colspan='4'>当前无进行中槽位</td></tr>"
+
+    quality_batch_match_count = 0
+    completed_rows = []
+    for slot, attempt in completed_valid:
+        is_suggested = (
+            QUALITY_REVIEW_BATCH_0901.get(slot.participant_slot)
+            == attempt.attempt_id
+        )
+        if is_suggested:
+            quality_batch_match_count += 1
+        duration_sec = None
+        if attempt.started_at and attempt.completed_at:
+            duration_sec = int((attempt.completed_at - attempt.started_at).total_seconds())
+        attempt_ref = f"{slot.participant_slot}|{attempt.attempt_id}"
+        completed_rows.append(
+            "<tr>"
+            f"<td><input type='checkbox' name='attempt_ref' "
+            f"value='{escape(attempt_ref, quote=True)}' "
+            f"data-suggested='{'yes' if is_suggested else 'no'}'></td>"
+            f"<td>{escape(slot.participant_slot)}</td>"
+            f"<td><code>{escape(attempt.attempt_id)}</code></td>"
+            f"<td>{escape(str(attempt.completed_at or ''))}</td>"
+            f"<td>{duration_sec if duration_sec is not None else ''}</td>"
+            f"<td>{attempt.distributor_no if attempt.distributor_no is not None else ''}</td>"
+            "</tr>"
+        )
+    completed_rows_html = "".join(completed_rows) or (
+        "<tr><td colspan='6'>当前没有可作废的已完成有效问卷</td></tr>"
+    )
 
     return f"""
     <div style="font-family:Arial,sans-serif;max-width:1050px;margin:40px auto;line-height:1.7">
@@ -812,6 +980,44 @@ def admin_dashboard():
       </form>
       <h3>进行中槽位</h3>
       <table border="1" cellpadding="6" cellspacing="0"><tr><th>槽位</th><th>attempt</th><th>最后活动</th><th>已释放次数</th></tr>{rows}</table>
+      <hr>
+      <h2>质量审核：作废已完成问卷并释放槽位</h2>
+      <p><strong>此操作不会删除原始回答。</strong>被作废的attempt保留为completed，但会标记is_valid=False；对应槽位重新变为available。</p>
+      <p>系统会先显示预览页，并锁定当前attempt_id；确认时如果槽位状态已变化，整批操作会自动取消。</p>
+      <form method="post" action="{url_for('preview_invalidate_completed_slots')}" id="quality-review-form">
+        <input type="hidden" name="admin_csrf_token" value="{admin_csrf_token()}">
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:10px 0">
+          <button type="button" id="select-suggested">勾选0901审核确认的26份（当前匹配{quality_batch_match_count}份）</button>
+          <button type="button" id="clear-selected">清空勾选</button>
+          <span>已勾选：<strong id="selected-count">0</strong>份</span>
+        </div>
+        <label>统一作废原因：
+          <input name="invalidation_reason" value="质量审核排除：机械作答、固定模板或极端快速作答" maxlength="500" required style="width:min(700px,90%)">
+        </label>
+        <div style="max-height:520px;overflow:auto;margin:12px 0;border:1px solid #ddd">
+          <table border="1" cellpadding="6" cellspacing="0" style="border-collapse:collapse;width:100%">
+            <thead style="position:sticky;top:0;background:#fff"><tr><th>选择</th><th>槽位</th><th>attempt_id</th><th>完成时间</th><th>总用时(秒)</th><th>发放人</th></tr></thead>
+            <tbody>{completed_rows_html}</tbody>
+          </table>
+        </div>
+        <button type="submit" style="background:#b42318;color:white;padding:8px 16px;border:0;border-radius:4px">下一步：预览本次作废名单</button>
+      </form>
+      <script>
+        (() => {{
+          const boxes = [...document.querySelectorAll("input[name='attempt_ref']")];
+          const count = document.getElementById('selected-count');
+          const refresh = () => {{ count.textContent = boxes.filter(box => box.checked).length; }};
+          boxes.forEach(box => box.addEventListener('change', refresh));
+          document.getElementById('select-suggested').addEventListener('click', () => {{
+            boxes.forEach(box => {{ box.checked = box.dataset.suggested === 'yes'; }});
+            refresh();
+          }});
+          document.getElementById('clear-selected').addEventListener('click', () => {{
+            boxes.forEach(box => {{ box.checked = false; }});
+            refresh();
+          }});
+        }})();
+      </script>
     </div>
     """
 
@@ -898,6 +1104,159 @@ def release_slot():
         return Response("释放槽位失败", 500)
 
 
+@app.route("/admin/invalidate_completed_slots/preview", methods=["POST"])
+@require_admin
+def preview_invalidate_completed_slots():
+    db = get_db()
+    try:
+        validate_admin_csrf()
+        refs = parse_attempt_refs(request.form.getlist("attempt_ref"))
+        reason = (request.form.get("invalidation_reason") or "").strip()
+        if not reason:
+            raise ValueError("必须填写作废原因")
+        if len(reason) > 500:
+            raise ValueError("作废原因不能超过500个字符")
+
+        resolved = load_completed_attempt_refs(db, refs)
+        preview_rows = []
+        hidden_refs = []
+        for slot, attempt in resolved:
+            response_count = db.scalar(
+                select(func.count()).select_from(SurveyResponse).where(
+                    SurveyResponse.attempt_id == attempt.attempt_id
+                )
+            ) or 0
+            duration_sec = None
+            if attempt.started_at and attempt.completed_at:
+                duration_sec = int(
+                    (attempt.completed_at - attempt.started_at).total_seconds()
+                )
+            preview_rows.append(
+                "<tr>"
+                f"<td>{escape(slot.participant_slot)}</td>"
+                f"<td><code>{escape(attempt.attempt_id)}</code></td>"
+                f"<td>{response_count}</td>"
+                f"<td>{duration_sec if duration_sec is not None else ''}</td>"
+                f"<td>{attempt.distributor_no if attempt.distributor_no is not None else ''}</td>"
+                "</tr>"
+            )
+            attempt_ref = f"{slot.participant_slot}|{attempt.attempt_id}"
+            hidden_refs.append(
+                f"<input type='hidden' name='attempt_ref' "
+                f"value='{escape(attempt_ref, quote=True)}'>"
+            )
+
+        expected_removed_rows = len(resolved) * EXPECTED_PAIRS_PER_ATTEMPT * EXPECTED_DIMENSION_COUNT
+        return f"""
+        <div style="font-family:Arial,sans-serif;max-width:1100px;margin:40px auto;line-height:1.7">
+          <h1>最终确认：作废问卷并释放槽位</h1>
+          <p style="color:#b42318"><strong>即将作废{len(resolved)}份已完成问卷，并释放{len(resolved)}个槽位。</strong></p>
+          <p>原始回答不会删除；有效数据导出预计减少{expected_removed_rows}行。后续补收完成后，会生成新的attempt_id。</p>
+          <p>统一原因：{escape(reason)}</p>
+          <div style="max-height:520px;overflow:auto;border:1px solid #ddd">
+            <table border="1" cellpadding="6" cellspacing="0" style="border-collapse:collapse;width:100%">
+              <thead><tr><th>槽位</th><th>attempt_id</th><th>原始回答行</th><th>总用时(秒)</th><th>发放人</th></tr></thead>
+              <tbody>{''.join(preview_rows)}</tbody>
+            </table>
+          </div>
+          <form method="post" action="{url_for('confirm_invalidate_completed_slots')}" style="margin-top:18px">
+            <input type="hidden" name="admin_csrf_token" value="{admin_csrf_token()}">
+            <input type="hidden" name="invalidation_reason" value="{escape(reason, quote=True)}">
+            {''.join(hidden_refs)}
+            <label style="display:block;margin:12px 0"><input type="checkbox" name="confirm_invalidation" value="yes" required> 我已核对槽位和attempt_id，确认整批作废并释放</label>
+            <button type="submit" style="background:#b42318;color:white;padding:9px 18px;border:0;border-radius:4px">确认执行</button>
+            <a href="{url_for('admin_dashboard')}" style="margin-left:14px">取消并返回后台</a>
+          </form>
+        </div>
+        """
+    except ValueError as error:
+        db.rollback()
+        return Response(escape(str(error)), 400)
+    except Exception:
+        db.rollback()
+        app.logger.exception("生成已完成问卷作废预览失败")
+        return Response("生成作废预览失败", 500)
+
+
+@app.route("/admin/invalidate_completed_slots/confirm", methods=["POST"])
+@require_admin
+def confirm_invalidate_completed_slots():
+    db = get_db()
+    try:
+        validate_admin_csrf()
+        if request.form.get("confirm_invalidation") != "yes":
+            raise ValueError("请勾选最终确认框")
+        refs = parse_attempt_refs(request.form.getlist("attempt_ref"))
+        reason = (request.form.get("invalidation_reason") or "").strip()
+        if not reason:
+            raise ValueError("必须填写作废原因")
+        if len(reason) > 500:
+            raise ValueError("作废原因不能超过500个字符")
+
+        resolved = load_completed_attempt_refs(db, refs, for_update=True)
+        now = utcnow()
+        released_slots = []
+        for slot, attempt in resolved:
+            previous_completed_at = attempt.completed_at
+            audit_note = f"质量审核作废并释放槽位：{reason}"
+
+            # Keep completion_status/completed_at to preserve the fact that the
+            # questionnaire was completed. is_valid controls research inclusion.
+            attempt.is_valid = False
+            attempt.invalid_reason = f"admin_quality_excluded: {reason}"
+            attempt.admin_note = (
+                f"{attempt.admin_note}\n{audit_note}"
+                if attempt.admin_note
+                else audit_note
+            )
+            attempt.updated_at = now
+
+            slot.slot_status = "available"
+            slot.active_attempt_id = None
+            slot.completed_attempt_id = None
+            slot.claimed_at = None
+            slot.last_activity_at = None
+            slot.completed_at = None
+            slot.expired_at = now
+            slot.release_count = int(slot.release_count or 0) + 1
+            slot.release_reason = f"质量审核作废：{reason}"
+            slot.updated_at = now
+
+            add_event(
+                db,
+                attempt=attempt,
+                event_type="completed_attempt_invalidated_and_slot_released",
+                event_data={
+                    "reason": reason,
+                    "previous_completion_status": "completed",
+                    "previous_completed_at": previous_completed_at,
+                    "response_rows_preserved": True,
+                    "slot_reopened": True,
+                },
+            )
+            released_slots.append(slot.participant_slot)
+
+        db.commit()
+        valid_rows_removed = len(released_slots) * EXPECTED_PAIRS_PER_ATTEMPT * EXPECTED_DIMENSION_COUNT
+        slot_list = "、".join(escape(item) for item in released_slots)
+        return f"""
+        <div style="font-family:Arial,sans-serif;max-width:1000px;margin:50px auto;line-height:1.8">
+          <h1 style="color:#067647">批量作废并释放成功</h1>
+          <p>已处理：<strong>{len(released_slots)}份问卷 / {len(released_slots)}个槽位</strong></p>
+          <p>有效数据导出减少：<strong>{valid_rows_removed}行</strong>；原始回答行数不减少。</p>
+          <p>已释放槽位：{slot_list}</p>
+          <p><a href="{url_for('admin_dashboard')}">返回管理后台</a>　<a href="{url_for('export_archive')}">下载处理后的完整CSV归档ZIP</a></p>
+        </div>
+        """
+    except ValueError as error:
+        db.rollback()
+        return Response(escape(str(error)), 400)
+    except Exception:
+        db.rollback()
+        app.logger.exception("批量作废已完成问卷并释放槽位失败")
+        return Response("批量作废并释放失败，数据库未提交任何更改", 500)
+
+
 def csv_bytes(headers, rows):
     output = io.StringIO()
     output.write("\ufeff")
@@ -933,6 +1292,7 @@ EVENT_LOG_EXPORT_HEADERS = [
 
 QUALITY_EXPORT_HEADERS = [
     "attempt_id", "participant_id", "participant_slot", "completion_status",
+    "is_valid", "invalid_reason", "admin_note",
     "answered_pair_count", "response_row_count", "unique_pair_count",
     "median_pair_time_sec", "total_duration_sec", "left_rate", "right_rate",
     "tie_rate", "too_fast_pair_count_lt2s", "late_stage_median_time_sec",
@@ -1221,6 +1581,10 @@ def quality_archive_rows(db):
         ]
         total_choices = len(choices)
         reasons = []
+        if attempt.completion_status == "completed" and not attempt.is_valid:
+            reasons.append("completed_but_marked_invalid")
+        if attempt.invalid_reason:
+            reasons.append(attempt.invalid_reason)
         if attempt.completion_status == "completed" and len(pair_times) != EXPECTED_PAIRS_PER_ATTEMPT:
             reasons.append("completed_but_pair_count_not_30")
         if len(responses) not in {0, EXPECTED_PAIRS_PER_ATTEMPT * EXPECTED_DIMENSION_COUNT} and attempt.completion_status == "completed":
@@ -1228,11 +1592,22 @@ def quality_archive_rows(db):
         too_fast = sum(1 for value in times if value < 2.0)
         if too_fast >= 5:
             reasons.append("too_many_pairs_under_2_seconds")
+        if attempt.completion_status == "completed" and not attempt.is_valid:
+            quality_flag = "excluded_by_admin"
+        elif attempt.completion_status != "completed":
+            quality_flag = "not_completed"
+        elif reasons:
+            quality_flag = "review"
+        else:
+            quality_flag = "structurally_ok"
         yield [
             attempt.attempt_id,
             attempt.participant_id,
             attempt.participant_slot,
             attempt.completion_status,
+            attempt.is_valid,
+            attempt.invalid_reason,
+            attempt.admin_note,
             attempt.answered_pair_count,
             len(responses),
             len(pair_times),
@@ -1243,7 +1618,7 @@ def quality_archive_rows(db):
             choices.count("tie") / total_choices if total_choices else None,
             too_fast,
             median(late_times) if late_times else None,
-            "review" if reasons else "structurally_ok",
+            quality_flag,
             ";".join(reasons),
         ]
 
