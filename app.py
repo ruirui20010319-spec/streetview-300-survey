@@ -1272,6 +1272,59 @@ def csv_response(filename, headers, rows):
     return response
 
 
+def streaming_csv_response(filename, headers, row_factory, *, flush_every=256):
+    """Stream a large CSV without materializing the full query or file in memory.
+
+    ``row_factory`` receives a dedicated SQLAlchemy session because Flask closes
+    the request-scoped session before a streaming response has necessarily been
+    exhausted by the client.
+    """
+
+    def generate_csv():
+        db = SessionLocal()
+        output = io.StringIO(newline="")
+        writer = csv.writer(output)
+
+        def drain_output():
+            payload = output.getvalue()
+            output.seek(0)
+            output.truncate(0)
+            if payload:
+                return payload.encode("utf-8")
+            return b""
+
+        try:
+            output.write("\ufeff")
+            writer.writerow(headers)
+            first_chunk = drain_output()
+            if first_chunk:
+                yield first_chunk
+
+            for row_number, row in enumerate(row_factory(db), start=1):
+                writer.writerow(row)
+                if row_number % flush_every == 0:
+                    chunk = drain_output()
+                    if chunk:
+                        yield chunk
+
+            final_chunk = drain_output()
+            if final_chunk:
+                yield final_chunk
+        except GeneratorExit:
+            raise
+        except Exception:
+            app.logger.exception("CSV流式导出失败：%s", filename)
+            raise
+        finally:
+            db.close()
+
+    response = Response(generate_csv(), mimetype="text/csv; charset=utf-8")
+    response.headers["Content-Disposition"] = f'attachment; filename="{filename}"'
+    response.headers["Cache-Control"] = "no-store, max-age=0"
+    response.headers["X-Accel-Buffering"] = "no"
+    return response
+
+
 RESPONSE_EXPORT_HEADERS = [
     "response_id", "pair_submission_id", "attempt_id", "participant_id",
     "participant_slot", "session_id", "survey_version", "assignment_version",
@@ -1431,7 +1484,7 @@ def responses_export_data(db, valid_only):
     return headers, rows
 
 
-def response_archive_rows(db, valid_only, *, batch_size=1000):
+def response_archive_rows(db, valid_only, *, batch_size=500):
     """Yield response rows in batches for the low-memory ZIP export."""
     stmt = select(SurveyResponse).join(
         SurveyAttempt, SurveyAttempt.attempt_id == SurveyResponse.attempt_id
@@ -1642,13 +1695,21 @@ def export_attempts():
 @app.route("/admin/export/responses_raw")
 @require_admin
 def export_responses_raw():
-    return csv_response("survey_responses_raw.csv", *responses_export_data(get_db(), False))
+    return streaming_csv_response(
+        "survey_responses_raw.csv",
+        RESPONSE_EXPORT_HEADERS,
+        lambda db: response_archive_rows(db, False),
+    )
 
 
 @app.route("/admin/export/responses_valid")
 @require_admin
 def export_responses_valid():
-    return csv_response("survey_responses_valid.csv", *responses_export_data(get_db(), True))
+    return streaming_csv_response(
+        "survey_responses_valid.csv",
+        RESPONSE_EXPORT_HEADERS,
+        lambda db: response_archive_rows(db, True),
+    )
 
 
 @app.route("/admin/export/survey_config")
